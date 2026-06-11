@@ -3,6 +3,7 @@ import { api, baseUrl, ensureDaemon } from "../daemon/client.ts";
 import { readLiveLock } from "../daemon/lock.ts";
 import { runStdioMcp } from "../mcp/stdio.ts";
 import { runHook } from "./hook.ts";
+import { runEvalCli } from "../eval/run.ts";
 import { installClaudeCode } from "../install/claude-code.ts";
 import { DEFAULT_PORT } from "../config.ts";
 import pkg from "../../package.json" with { type: "json" };
@@ -21,6 +22,8 @@ Project:
   install claude-code    Wire Claude Code into Nerveplane (.mcp.json + hook)
   agents                 List active agents
   events                 Show recent coordination events
+  conflicts              List open conflict warnings (resolve/dismiss <id>)
+  eval                   Run the deterministic conflict-detection eval
 
 Integration (usually invoked by tools, not humans):
   mcp                    Run the stdio MCP server (spawned by Claude Code/Cursor)
@@ -153,6 +156,36 @@ export async function runCli(argv: string[]): Promise<number> {
       }
       return 0;
     }
+
+    case "conflicts": {
+      const sub = rest[0];
+      if (sub === "resolve" || sub === "dismiss") {
+        const id = rest[1];
+        if (!id) {
+          process.stderr.write(`usage: nerveplane conflicts ${sub} <id>\n`);
+          return 1;
+        }
+        const res = await api<{ ok: boolean }>("POST", `/api/v1/conflicts/${id}/${sub}`, {});
+        process.stdout.write(res.data?.ok ? `nerveplane: conflict ${sub}d\n` : "nerveplane: conflict not found\n");
+        return res.data?.ok ? 0 : 1;
+      }
+      const res = await api<{ conflicts: { id: string; type: string; severity: string; summary: string; suggestedAction: string | null }[] }>(
+        "GET",
+        "/api/v1/conflicts?status=open",
+      );
+      const conflicts = res.data?.conflicts ?? [];
+      if (conflicts.length === 0) {
+        process.stdout.write("nerveplane: no open conflicts\n");
+        return 0;
+      }
+      for (const w of conflicts) {
+        process.stdout.write(`  [${w.severity}] ${w.type.padEnd(13)} ${w.summary}\n        → ${w.suggestedAction ?? ""}  (${w.id})\n`);
+      }
+      return 0;
+    }
+
+    case "eval":
+      return runEvalCli();
 
     default:
       process.stderr.write(`nerveplane: unknown command "${cmd}"\n\n${HELP}`);

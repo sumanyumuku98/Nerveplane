@@ -6,6 +6,7 @@ import { emitEvent } from "../core/events.ts";
 import { sendMessage, syncAgent, peek } from "../core/inbox.ts";
 import { claimTask, updateTask, handoffTask, requestReview, openTasks } from "../core/tasks.ts";
 import { recordDecision, queryDecisions } from "../core/decisions.ts";
+import { listConflicts, resolveConflict, dismissConflict } from "../core/conflicts.ts";
 import { buildJoinPacket } from "../core/join.ts";
 import { recentEvents } from "../core/events.ts";
 
@@ -177,6 +178,23 @@ export function buildApi(): Hono {
   });
   api.get("/repos", (c) => c.json({ repos: listRepos() }));
   api.get("/events", (c) => c.json({ events: recentEvents(Number(c.req.query("limit") ?? 50)) }));
+
+  // --- conflicts ---
+  api.get("/conflicts", (c) => {
+    const q = c.req.query();
+    return c.json({
+      conflicts: listConflicts({
+        status: (q.status as "open" | "resolved" | "dismissed" | undefined) ?? "open",
+        repoId: q.repoId,
+        agentId: q.agentId,
+      }),
+    });
+  });
+  api.post("/conflicts/:id/resolve", (c) => c.json({ ok: resolveConflict(c.req.param("id")) }));
+  api.post("/conflicts/:id/dismiss", async (c) => {
+    const body = await c.req.json().catch(() => ({}) as { reason?: string });
+    return c.json({ ok: dismissConflict(c.req.param("id"), body.reason) });
+  });
 
   return api;
 }

@@ -230,6 +230,8 @@ export const conflictWarnings = sqliteTable(
     type: text("type").notNull(),
     severity: text("severity").$type<Severity>().notNull(),
     summary: text("summary").notNull(),
+    // stable dedup key = sorted(agentA,agentB)|kind|sorted(scope) — see plan M2.3
+    fingerprint: text("fingerprint"),
     agentIds: text("agent_ids_json", { mode: "json" }).$type<string[]>(),
     repoScope: text("repo_scope_json", { mode: "json" }).$type<string[]>(),
     serviceScope: text("service_scope_json", { mode: "json" }).$type<string[]>(),
@@ -238,8 +240,19 @@ export const conflictWarnings = sqliteTable(
     status: text("status").$type<"open" | "resolved" | "dismissed">().notNull(),
     createdAt: text("created_at").notNull(),
   },
-  (t) => [index("idx_conflicts_status").on(t.status)],
+  (t) => [index("idx_conflicts_status").on(t.status), index("idx_conflicts_fp").on(t.fingerprint, t.status)],
 );
+
+/** Latest sensed git state per agent — the cross-agent conflict detector reads
+ *  this so it can compare every active agent's changed-file set in a repo. */
+export const agentWorktreeState = sqliteTable("agent_worktree_state", {
+  agentId: text("agent_id").primaryKey(),
+  repoId: text("repo_id"),
+  changedFiles: text("changed_files_json", { mode: "json" }).$type<string[]>(),
+  branch: text("branch"),
+  headSha: text("head_sha"),
+  updatedAt: text("updated_at").notNull(),
+});
 
 /** Plan addition: per-agent read cursor so `sync` returns only fresh items. */
 export const syncMarkers = sqliteTable("sync_markers", {

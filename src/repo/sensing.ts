@@ -2,6 +2,10 @@ import { REPO_POLL_INTERVAL_MS } from "../config.ts";
 import { discoverAgents } from "../core/registry.ts";
 import { emitEvent } from "../core/events.ts";
 import { getWorktreeState } from "./git.ts";
+import { getDb } from "../storage/db.ts";
+import { agentWorktreeState } from "../storage/schema.ts";
+import { nowIso } from "../core/util.ts";
+import { detectConflictsForRepo } from "../conflicts/detect.ts";
 
 /**
  * Passive sensing engine (plan Part C.1 — the core of M1's differentiation).
@@ -23,6 +27,24 @@ export async function senseAgent(agentId: string, worktreePath: string, repoId: 
   const state = await getWorktreeState(worktreePath, baseBranch);
   const current = new Set(state.changedFiles);
   const prev = snapshots.get(agentId);
+
+  // Persist the latest sensed state every tick so the cross-agent conflict
+  // detector always has each agent's current changed-file set (plan M2.1).
+  getDb()
+    .insert(agentWorktreeState)
+    .values({
+      agentId,
+      repoId,
+      changedFiles: [...current].sort(),
+      branch: state.branch,
+      headSha: state.headSha,
+      updatedAt: nowIso(),
+    })
+    .onConflictDoUpdate({
+      target: agentWorktreeState.agentId,
+      set: { repoId, changedFiles: [...current].sort(), branch: state.branch, headSha: state.headSha, updatedAt: nowIso() },
+    })
+    .run();
 
   // First observation establishes a baseline — no event (we only signal change).
   if (!prev) {
@@ -53,7 +75,8 @@ export async function senseAgent(agentId: string, worktreePath: string, repoId: 
   return 1;
 }
 
-/** One sensing pass across all active agents that have a worktree + repo. */
+/** One sensing pass across all active agents that have a worktree + repo,
+ *  followed by cross-agent conflict detection for any repo with ≥2 agents. */
 export async function senseTick(): Promise<number> {
   const agents = discoverAgents().filter((a) => a.worktreePath && a.repoId);
   let emitted = 0;
@@ -62,6 +85,18 @@ export async function senseTick(): Promise<number> {
       emitted += await senseAgent(a.id, a.worktreePath!, a.repoId!, a.baseBranch, a.name);
     } catch (err) {
       console.error(`nerveplane: sensing failed for agent ${a.id}:`, err);
+    }
+  }
+
+  // Run conflict detection once per repo that has ≥2 active agents.
+  const repoCounts = new Map<string, number>();
+  for (const a of agents) repoCounts.set(a.repoId!, (repoCounts.get(a.repoId!) ?? 0) + 1);
+  for (const [repoId, count] of repoCounts) {
+    if (count < 2) continue;
+    try {
+      detectConflictsForRepo(repoId);
+    } catch (err) {
+      console.error(`nerveplane: conflict detection failed for repo ${repoId}:`, err);
     }
   }
   return emitted;
