@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import "./bun-guard.ts"; // must be first — exits cleanly if not running under Bun
 import { runCli } from "./cli/index.ts";
 
 runCli(process.argv.slice(2))

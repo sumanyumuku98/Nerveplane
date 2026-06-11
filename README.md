@@ -32,28 +32,47 @@ Early development. Building toward the MVP in milestones (see the build plan):
 - **M3 — Contract-aware cross-repo routing** ✅ — the differentiation wedge. A **service graph** (`services.yaml`) + in-process **OpenAPI** / **GraphQL** breaking-change diffing (vs the merge-base baseline) + **cross-repo routing**: when an agent changes a provided contract, the daemon senses it and routes high-severity warnings to active agents in **consumer** repos (direct + transitive + test owners), raising `service_contract_conflict` warnings with changed-field evidence. Verified live against spec §29 (billing → checkout/frontend/e2e; unrelated untouched). AsyncAPI/protobuf are pluggable behind the same interface (deferred).
 - **M4 — Dashboard + human-in-the-loop** ✅ — a live **Svelte 5 dashboard** (served at `/dashboard`, `nerveplane dashboard` to open) with SSE-driven Agents / Tasks / Event-timeline / Conflicts / Decisions / Service-graph views and human actions (resolve/dismiss conflicts, approve/reject decisions, broadcast announcements); a `/events` SSE stream and `/api/v1/dashboard` snapshot; and the **Streamable HTTP MCP** endpoint (`/mcp`) sharing the 6 tools with the stdio server.
 
-## Requirements
+## Install
 
-- [Bun](https://bun.sh) ≥ 1.2
-
-## Quickstart
+**Standalone binary (no Bun required)** — macOS & Linux:
 
 ```bash
-bun install
-bun run daemon                      # run the coordination daemon (127.0.0.1:7734)
-
-# in your repo (another shell) — the daemon auto-starts if not running:
-bun run src/index.ts init           # register this repo with the daemon
-bun run src/index.ts install claude-code   # write .mcp.json + the PreToolUse hook
-bun run src/index.ts agents         # list active agents
-bun run src/index.ts events         # show recent coordination events
-bun run src/index.ts status         # daemon status / health
-bun run src/index.ts stop           # stop the daemon
+curl -fsSL https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.sh | sh
 ```
 
-Once installed, agents (Claude Code/Cursor/Codex) call the MCP tools `register` → `sync` → `publish`/`task`/`decision`/`discover`. The daemon also **passively senses** git changes in registered worktrees, so agents are warned about each other's edits even if they never call `publish`.
+**Via npm** (requires [Bun](https://bun.sh) ≥ 1.2):
 
-All durable state lives under `~/.nerveplane/` (override with `NERVEPLANE_HOME`). A single user-level daemon spans all projects — cross-repo coordination is impossible with per-repo daemons.
+```bash
+npm i -g nerveplane     # or: bunx nerveplane
+```
+
+Then, per project:
+
+```bash
+nerveplane daemon                 # start the coordination daemon (127.0.0.1:7734)
+nerveplane init                   # register this repo (run inside it)
+nerveplane install claude-code    # write .mcp.json + the PreToolUse hook
+nerveplane service install        # (optional) keep the daemon running at login
+nerveplane dashboard              # open the live web UI
+```
+
+Agents (Claude Code/Cursor/Codex) then call the MCP tools `register` → `sync` → `publish`/`task`/`decision`/`discover`. The daemon also **passively senses** git changes in registered worktrees, so agents are warned about each other's edits even if they never call `publish`. All durable state lives under `~/.nerveplane/` (override with `NERVEPLANE_HOME`); a single user-level daemon spans all projects.
+
+## Run from source
+
+Requires [Bun](https://bun.sh) ≥ 1.2.
+
+```bash
+git clone https://github.com/sumanyumuku98/Nerveplane.git && cd Nerveplane
+bun install
+bun run build:dashboard             # build the embedded dashboard once
+bun run daemon                      # coordination daemon (127.0.0.1:7734)
+
+# in your repo (another shell) — the daemon auto-starts if not running:
+bun run src/index.ts init
+bun run src/index.ts install claude-code
+bun run src/index.ts agents | events | conflicts | dashboard | status | stop
+```
 
 ## Development
 

@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  npm:
+    name: publish to npm
+    runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: "1.2.18"
+      - run: bun install --frozen-lockfile
+      - run: bun run build:dashboard
+      - name: Publish (skipped if NPM_TOKEN is unset)
+        if: ${{ env.NPM_TOKEN != '' }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm publish --provenance --access public
+      - name: Note when skipped
+        if: ${{ env.NPM_TOKEN == '' }}
+        run: echo "NPM_TOKEN not set — skipping npm publish. Add the secret to enable."
+
+  binaries:
+    name: build & attach binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: "1.2.18"
+      - run: bun install --frozen-lockfile
+      - name: Cross-compile binaries (macOS arm64/x64, Linux x64)
+        run: bun run build:binaries
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME:-manual}"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            && gh release upload "$TAG" dist/nerveplane-darwin-arm64 dist/nerveplane-darwin-x64 dist/nerveplane-linux-x64 --clobber \
+            || gh release create "$TAG" dist/nerveplane-darwin-arm64 dist/nerveplane-darwin-x64 dist/nerveplane-linux-x64 --generate-notes --title "$TAG"
