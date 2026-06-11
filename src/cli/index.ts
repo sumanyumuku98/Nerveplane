@@ -1,6 +1,9 @@
 import { startDaemon } from "../daemon/server.ts";
 import { api, baseUrl, ensureDaemon } from "../daemon/client.ts";
 import { readLiveLock } from "../daemon/lock.ts";
+import { runStdioMcp } from "../mcp/stdio.ts";
+import { runHook } from "./hook.ts";
+import { installClaudeCode } from "../install/claude-code.ts";
 import { DEFAULT_PORT } from "../config.ts";
 import pkg from "../../package.json" with { type: "json" };
 
@@ -14,7 +17,14 @@ Daemon:
   stop                   Stop the running daemon
 
 Project:
-  init                   Ensure the daemon is running (repo registration: M1)
+  init                   Register the current repo with the daemon
+  install claude-code    Wire Claude Code into Nerveplane (.mcp.json + hook)
+  agents                 List active agents
+  events                 Show recent coordination events
+
+Integration (usually invoked by tools, not humans):
+  mcp                    Run the stdio MCP server (spawned by Claude Code/Cursor)
+  hook                   PreToolUse hook entrypoint (reads JSON on stdin)
 
   --help, -h             Show this help
   --version, -v          Show version
@@ -77,15 +87,71 @@ export async function runCli(argv: string[]): Promise<number> {
       return readLiveLock() ? 1 : 0;
     }
 
+    case "mcp":
+      await runStdioMcp();
+      return 0;
+
+    case "hook":
+      return runHook();
+
     case "init": {
       await ensureDaemon();
-      const res = await api("GET", "/health");
+      const res = await api<{ repo: { id: string; name: string; path: string } }>("POST", "/api/v1/repos/register", {
+        path: process.cwd(),
+      });
+      if (!res.ok) {
+        process.stdout.write("nerveplane: failed to register repo\n");
+        return 1;
+      }
       process.stdout.write(
-        res.ok
-          ? "nerveplane: daemon ready (repo registration lands in M1)\n"
-          : "nerveplane: failed to reach daemon\n",
+        `nerveplane: registered repo "${res.data.repo.name}" (${res.data.repo.id})\n  path: ${res.data.repo.path}\nNext: nerveplane install claude-code\n`,
       );
-      return res.ok ? 0 : 1;
+      return 0;
+    }
+
+    case "install": {
+      const target = rest[0];
+      if (target !== "claude-code") {
+        process.stderr.write("usage: nerveplane install claude-code\n");
+        return 1;
+      }
+      const result = installClaudeCode(process.cwd());
+      process.stdout.write("nerveplane: installed Claude Code integration\n");
+      for (const f of result.files) process.stdout.write(`  wrote ${f}\n`);
+      for (const n of result.notes) process.stdout.write(`  • ${n}\n`);
+      return 0;
+    }
+
+    case "agents": {
+      const res = await api<{ agents: { id: string; name: string; status: string; branch: string | null; capabilities: string[] }[] }>(
+        "GET",
+        "/api/v1/agents?includeOffline=true",
+      );
+      const agents = res.data?.agents ?? [];
+      if (agents.length === 0) {
+        process.stdout.write("nerveplane: no agents registered\n");
+        return 0;
+      }
+      for (const a of agents) {
+        process.stdout.write(`  ${a.status.padEnd(12)} ${a.name.padEnd(20)} ${a.branch ?? "-"}  [${a.capabilities.join(",")}]  ${a.id}\n`);
+      }
+      return 0;
+    }
+
+    case "events": {
+      const res = await api<{ events: { type: string; severity: string; summary: string; createdAt: string }[] }>(
+        "GET",
+        "/api/v1/events?limit=30",
+      );
+      const events = res.data?.events ?? [];
+      if (events.length === 0) {
+        process.stdout.write("nerveplane: no events yet\n");
+        return 0;
+      }
+      for (const e of events) {
+        process.stdout.write(`  ${e.createdAt}  ${e.severity.padEnd(8)} ${e.type.padEnd(22)} ${e.summary}\n`);
+      }
+      return 0;
     }
 
     default:

@@ -1,6 +1,7 @@
 import { buildApp } from "../http/app.ts";
 import { runMigrations } from "../storage/migrate.ts";
 import { startPresenceSweeper } from "../core/presence.ts";
+import { startSensing } from "../repo/sensing.ts";
 import { ensureHome, writeLock, clearLock, readLiveLock } from "./lock.ts";
 import { HOST, DEFAULT_PORT } from "../config.ts";
 import pkg from "../../package.json" with { type: "json" };
@@ -39,12 +40,14 @@ export async function startDaemon(port: number = DEFAULT_PORT): Promise<DaemonHa
   });
 
   const stopSweeper = startPresenceSweeper();
+  const stopSensing = startSensing();
 
   let stopped = false;
   const stop = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
     stopSweeper();
+    stopSensing();
     await server.stop();
     clearLock();
   };
