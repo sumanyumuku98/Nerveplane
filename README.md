@@ -34,13 +34,27 @@ Early development. Building toward the MVP in milestones (see the build plan):
 
 ## Install
 
-**Standalone binary (no Bun required)** — macOS & Linux:
+No Bun required for the binary installs (the runtime is bundled).
+
+**Homebrew** (macOS / Linux):
+
+```bash
+brew install sumanyumuku98/nerveplane/nerveplane
+```
+
+**Shell** (macOS / Linux — arm64 & x64):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.sh | sh
 ```
 
-**Via npm** (requires [Bun](https://bun.sh) ≥ 1.2):
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.ps1 | iex
+```
+
+**npm** (any OS; requires [Bun](https://bun.sh) ≥ 1.2):
 
 ```bash
 npm i -g nerveplane     # or: bunx nerveplane

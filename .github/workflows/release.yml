@@ -47,6 +47,62 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME:-manual}"
+          ASSETS="dist/nerveplane-darwin-arm64 dist/nerveplane-darwin-x64 dist/nerveplane-linux-x64 dist/nerveplane-linux-arm64 dist/nerveplane-windows-x64.exe"
           gh release view "$TAG" >/dev/null 2>&1 \
-            && gh release upload "$TAG" dist/nerveplane-darwin-arm64 dist/nerveplane-darwin-x64 dist/nerveplane-linux-x64 --clobber \
-            || gh release create "$TAG" dist/nerveplane-darwin-arm64 dist/nerveplane-darwin-x64 dist/nerveplane-linux-x64 --generate-notes --title "$TAG"
+            && gh release upload "$TAG" $ASSETS --clobber \
+            || gh release create "$TAG" $ASSETS --generate-notes --title "$TAG"
+
+  homebrew:
+    name: update homebrew tap
+    needs: binaries
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    env:
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - name: Note when skipped
+        if: ${{ env.TAP_TOKEN == '' }}
+        run: echo "HOMEBREW_TAP_TOKEN not set — skipping Homebrew tap update."
+      - name: Bump formula in sumanyumuku98/homebrew-nerveplane
+        if: ${{ env.TAP_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="${GITHUB_REF_NAME}"; VER="${TAG#v}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          sha() { gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$1" -O "$1" --clobber; sha256sum "$1" | cut -d' ' -f1; }
+          DA=$(sha nerveplane-darwin-arm64); DX=$(sha nerveplane-darwin-x64)
+          LX=$(sha nerveplane-linux-x64); LA=$(sha nerveplane-linux-arm64)
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/sumanyumuku98/homebrew-nerveplane.git" tap
+          mkdir -p tap/Formula
+          cat > tap/Formula/nerveplane.rb <<EOF
+          class Nerveplane < Formula
+            desc "Coordination plane for autonomous coding agents"
+            homepage "https://github.com/sumanyumuku98/Nerveplane"
+            version "${VER}"
+            license "MIT"
+
+            on_macos do
+              on_arm { url "${base}/nerveplane-darwin-arm64"; sha256 "${DA}" }
+              on_intel { url "${base}/nerveplane-darwin-x64"; sha256 "${DX}" }
+            end
+            on_linux do
+              on_intel { url "${base}/nerveplane-linux-x64"; sha256 "${LX}" }
+              on_arm { url "${base}/nerveplane-linux-arm64"; sha256 "${LA}" }
+            end
+
+            def install
+              bin.install Dir["nerveplane-*"].first => "nerveplane"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/nerveplane --version")
+            end
+          end
+          EOF
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/nerveplane.rb
+          git commit -m "nerveplane ${VER}" && git push

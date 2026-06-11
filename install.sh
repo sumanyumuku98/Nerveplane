@@ -19,10 +19,6 @@ case "$arch" in
   x86_64|amd64) arch=x64 ;;
   *) echo "Unsupported arch: $arch" >&2; exit 1 ;;
 esac
-if [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then
-  echo "Linux arm64 binaries aren't published yet. Install Bun (https://bun.sh) and run: npm i -g nerveplane" >&2
-  exit 1
-fi
 
 asset="${BIN}-${os}-${arch}"
 url="https://github.com/${REPO}/releases/latest/download/${asset}"

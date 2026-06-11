@@ -4,15 +4,19 @@ Nerveplane runs as a single **user-level daemon** (`~/.nerveplane/`, port `7734`
 
 ## Install
 
-**Standalone binary (no Bun required)** — macOS & Linux:
+No Bun required for the binary installs (the runtime is bundled).
 
 ```bash
+# Homebrew (macOS / Linux)
+brew install sumanyumuku98/nerveplane/nerveplane
+
+# Shell (macOS / Linux, arm64 & x64)
 curl -fsSL https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.sh | sh
-```
 
-**Via npm** (requires [Bun](https://bun.sh) ≥ 1.2):
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.ps1 | iex
 
-```bash
+# npm (requires Bun ≥ 1.2)
 npm i -g nerveplane
 ```
 
