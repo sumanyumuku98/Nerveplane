@@ -1,6 +1,8 @@
 import type { ContractType } from "../graph.ts";
 import { diffOpenAPI } from "./openapi.ts";
 import { diffGraphQL } from "./graphql.ts";
+import { diffAsyncAPI } from "./asyncapi.ts";
+import { diffProtobuf } from "./protobuf.ts";
 
 /** A normalized contract change, format-agnostic, so routing/eval don't care
  *  whether it came from OpenAPI, GraphQL, etc. */
@@ -11,14 +13,18 @@ export interface BreakingChange {
   breaking: boolean;
 }
 
-/** Dispatch a contract diff by type. Unsupported types (asyncapi/protobuf in
- *  M3) return [] — the interface is ready for them later. */
+/** Dispatch a contract diff by type. All four formats are detected in-process
+ *  (no external binaries); event-name contracts have no file body to diff. */
 export async function diffContract(type: ContractType, oldText: string, newText: string): Promise<BreakingChange[]> {
   switch (type) {
     case "openapi":
       return diffOpenAPI(oldText, newText);
     case "graphql":
       return diffGraphQL(oldText, newText);
+    case "asyncapi":
+      return diffAsyncAPI(oldText, newText);
+    case "protobuf":
+      return diffProtobuf(oldText, newText);
     default:
       return [];
   }

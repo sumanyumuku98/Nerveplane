@@ -1,6 +1,8 @@
 import { test, expect } from "bun:test";
 import { diffOpenAPI } from "../src/services/diff/openapi.ts";
 import { diffGraphQL } from "../src/services/diff/graphql.ts";
+import { diffAsyncAPI } from "../src/services/diff/asyncapi.ts";
+import { diffProtobuf } from "../src/services/diff/protobuf.ts";
 import { breakingOnly } from "../src/services/diff/index.ts";
 
 const oasOld = `
@@ -89,4 +91,65 @@ test("GraphQL diff flags a removed field as breaking", async () => {
 
 test("identical OpenAPI specs produce no breaking changes", () => {
   expect(breakingOnly(diffOpenAPI(oasOld, oasOld))).toEqual([]);
+});
+
+test("AsyncAPI diff flags removed/retyped payload fields and removed channels as breaking", () => {
+  const a = `asyncapi: 2.6.0
+info: { title: billing, version: 1.0.0 }
+channels:
+  invoice/created:
+    subscribe:
+      message:
+        payload:
+          type: object
+          properties:
+            invoice_id: { type: string }
+            total: { type: integer }
+  legacy/ping:
+    publish:
+      message: { payload: { type: object, properties: { ok: { type: boolean } } } }`;
+  const b = `asyncapi: 2.6.0
+info: { title: billing, version: 2.0.0 }
+channels:
+  invoice/created:
+    subscribe:
+      message:
+        payload:
+          type: object
+          properties:
+            id: { type: string }
+            total: { type: string }`;
+  const breaking = breakingOnly(diffAsyncAPI(a, b));
+  const kinds = breaking.map((c) => `${c.kind}:${c.path}`);
+  expect(kinds).toContain("payload_field_removed:invoice/created subscribe → invoice_id");
+  expect(kinds).toContain("payload_field_retyped:invoice/created subscribe → total");
+  expect(kinds).toContain("channel_removed:legacy/ping");
+});
+
+test("protobuf diff flags removed fields, number/type changes, and removed messages", () => {
+  const a = `syntax = "proto3";
+message Invoice {
+  string invoice_id = 1;
+  int64 total = 2;
+}
+message Ping {
+  bool ok = 1;
+}`;
+  const b = `syntax = "proto3";
+message Invoice {
+  string id = 1;
+  string total = 3;
+}`;
+  const breaking = breakingOnly(diffProtobuf(a, b));
+  const kinds = breaking.map((c) => `${c.kind}:${c.path}`);
+  expect(kinds).toContain("field_removed:Invoice.invoice_id");
+  expect(kinds).toContain("field_number_changed:Invoice.total"); // 2 -> 3
+  expect(kinds).toContain("message_removed:Ping");
+});
+
+test("identical AsyncAPI / protobuf produce no breaking changes", () => {
+  const aa = `asyncapi: 2.6.0\nchannels:\n  x:\n    subscribe:\n      message: { payload: { type: object, properties: { a: { type: string } } } }`;
+  expect(breakingOnly(diffAsyncAPI(aa, aa))).toEqual([]);
+  const pb = `message M { string a = 1; }`;
+  expect(breakingOnly(diffProtobuf(pb, pb))).toEqual([]);
 });
