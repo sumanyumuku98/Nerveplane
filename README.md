@@ -1,6 +1,21 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="Nerveplane" width="120" height="120" />
+
 # Nerveplane
 
-Local-first, MCP-compatible **coordination plane for autonomous coding agents** working in parallel across repos, branches, git worktrees, services, and microservice contracts.
+**The coordination plane for autonomous coding agents** — local-first, MCP-compatible, repo- and service-aware.
+
+[![CI](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml/badge.svg)](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.2-fbf0df?logo=bun&logoColor=black)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![MCP](https://img.shields.io/badge/MCP-compatible-7c3aed)](https://modelcontextprotocol.io)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-22c55e.svg)](https://github.com/sumanyumuku98/Nerveplane/pulls)
+
+</div>
+
+Nerveplane keeps parallel coding agents aligned across **repos, branches, git worktrees, services, and microservice contracts** — passively sensing git state, detecting conflicts, and routing breaking API/contract changes to the agents in *consumer* repos, before merge.
 
 > As developers run multiple coding agents in parallel, the bottleneck shifts from code generation to coordination. Nerveplane is the missing coordination layer.
 
@@ -65,3 +80,11 @@ CLI / Claude Code / Cursor / Codex   (MCP stdio+HTTP · REST · SSE · A2A later
    ├─ Routing      recipient selection · severity · dedup/suppression · conflict detection
    └─ Storage      SQLite WAL via Drizzle → optional Postgres later
 ```
+
+## Contributing
+
+PRs welcome. CI (typecheck · tests · conflict-detection eval gate · dashboard + binary build) runs on every push and pull request via [GitHub Actions](.github/workflows/ci.yml). Before opening a PR: `bun test && bun run typecheck`.
+
+## License
+
+[MIT](LICENSE) © 2026 Sumanyu Muku

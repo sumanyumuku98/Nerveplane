@@ -1,0 +1,43 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Nerveplane">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1e1b4b"/>
+      <stop offset="1" stop-color="#0b1020"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="60" y1="70" x2="196" y2="186" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <radialGradient id="hub" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(128 128) scale(34)">
+      <stop stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+
+  <!-- routing edges: the hub fans a signal out to peripheral agent nodes -->
+  <g stroke="url(#edge)" stroke-width="5" stroke-linecap="round" opacity="0.85">
+    <line x1="128" y1="128" x2="64"  y2="68"/>
+    <line x1="128" y1="128" x2="196" y2="72"/>
+    <line x1="128" y1="128" x2="60"  y2="190"/>
+    <line x1="128" y1="128" x2="198" y2="186"/>
+    <line x1="128" y1="128" x2="210" y2="128"/>
+  </g>
+
+  <!-- peripheral nodes (agents / repos / services) -->
+  <g fill="#1e293b" stroke="#3b82f6" stroke-width="4">
+    <circle cx="64"  cy="68"  r="15"/>
+    <circle cx="196" cy="72"  r="15"/>
+    <circle cx="60"  cy="190" r="15"/>
+    <circle cx="198" cy="186" r="15"/>
+    <circle cx="210" cy="128" r="13"/>
+  </g>
+
+  <!-- highlighted recipient (a routed warning landing) -->
+  <circle cx="196" cy="72" r="15" fill="#f97316" stroke="#fdba74" stroke-width="4"/>
+
+  <!-- central coordination hub -->
+  <circle cx="128" cy="128" r="30" fill="url(#hub)" stroke="#c4b5fd" stroke-width="4"/>
+  <circle cx="128" cy="128" r="11" fill="#ede9fe"/>
+</svg>
