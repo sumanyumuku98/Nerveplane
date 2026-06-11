@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: typecheck · test · build
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned to releases >7 days old (org dependency policy).
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: "1.2.18"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+      - name: Conflict-detection eval gate
+        run: bun run src/index.ts eval
+
+      - name: Build dashboard
+        run: bun run build:dashboard
+
+      - name: Build single binary
+        run: bun run build
