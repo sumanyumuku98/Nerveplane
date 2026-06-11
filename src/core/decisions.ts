@@ -83,6 +83,18 @@ export function queryDecisions(q: DecisionQuery = {}): Decision[] {
   return rows.slice(0, q.limit ?? 50);
 }
 
+/** Human action (spec §21.3): approve a draft → active, or reject/supersede. */
+export function setDecisionStatus(id: string, status: Decision["status"]): Decision | undefined {
+  const db = getDb();
+  const res = db
+    .update(decisions)
+    .set({ status })
+    .where(eq(decisions.id, id))
+    .returning()
+    .all();
+  return res[0];
+}
+
 export function recentDecisions(limit = 20): Decision[] {
   return getDb()
     .select()

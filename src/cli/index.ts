@@ -25,6 +25,7 @@ Project:
   conflicts              List open conflict warnings (resolve/dismiss <id>)
   service scan [path]    Load a services.yaml into the service graph
   services               List services and contracts
+  dashboard              Open the live web dashboard in your browser
   eval                   Run the deterministic conflict-detection eval
 
 Integration (usually invoked by tools, not humans):
@@ -220,6 +221,16 @@ export async function runCli(argv: string[]): Promise<number> {
       for (const s of svcs) process.stdout.write(`  ${s.name}\n`);
       process.stdout.write("contracts:\n");
       for (const ct of contracts) process.stdout.write(`  ${ct.type.padEnd(9)} ${ct.name.padEnd(20)} ${ct.path ?? ""} (${ct.serviceId})\n`);
+      return 0;
+    }
+
+    case "dashboard": {
+      await ensureDaemon();
+      const url = `${baseUrl()}/dashboard`;
+      const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+      const { spawn } = await import("node:child_process");
+      spawn(opener, [url], { detached: true, stdio: "ignore" }).unref();
+      process.stdout.write(`nerveplane: dashboard at ${url}\n`);
       return 0;
     }
 

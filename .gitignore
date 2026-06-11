@@ -1,7 +1,8 @@
 node_modules/
 dist/
-*.log
+dashboard/dist/
 .DS_Store
+*.log
 
 # Local nerveplane state (when run from within this repo during dev)
 .nerveplane/

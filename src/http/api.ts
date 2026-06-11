@@ -3,9 +3,9 @@ import type { AgentStatus, EventType, Severity } from "../storage/schema.ts";
 import { registerAgent, heartbeat, setStatus, discoverAgents, getAgent, agentByWorktree } from "../core/registry.ts";
 import { upsertRepoByPath, listRepos } from "../core/repos.ts";
 import { emitEvent } from "../core/events.ts";
-import { sendMessage, syncAgent, peek } from "../core/inbox.ts";
+import { sendMessage, syncAgent, peek, broadcast } from "../core/inbox.ts";
 import { claimTask, updateTask, handoffTask, requestReview, openTasks } from "../core/tasks.ts";
-import { recordDecision, queryDecisions } from "../core/decisions.ts";
+import { recordDecision, queryDecisions, recentDecisions, setDecisionStatus } from "../core/decisions.ts";
 import { listConflicts, resolveConflict, dismissConflict } from "../core/conflicts.ts";
 import { scanServiceGraph, listServices, listContracts, invalidateGraphCache } from "../services/contracts.ts";
 import { buildJoinPacket } from "../core/join.ts";
@@ -210,6 +210,31 @@ export function buildApi(): Hono {
   });
   api.get("/services", (c) => c.json({ services: listServices(), contracts: listContracts() }));
   api.get("/contracts", (c) => c.json({ contracts: listContracts() }));
+
+  // --- dashboard snapshot + human actions (spec §21) ---
+  api.get("/dashboard", (c) =>
+    c.json({
+      agents: discoverAgents({ includeOffline: true }),
+      tasks: openTasks(),
+      events: recentEvents(50),
+      conflicts: listConflicts({ status: "open" }),
+      decisions: recentDecisions(50),
+      services: listServices(),
+      contracts: listContracts(),
+    }),
+  );
+
+  api.post("/decisions/:id/status", async (c) => {
+    const body = (await c.req.json()) as { status: "active" | "superseded" | "rejected" | "draft" };
+    const decision = setDecisionStatus(c.req.param("id"), body.status);
+    return decision ? c.json({ decision }) : c.json({ error: "not found" }, 404);
+  });
+
+  api.post("/announce", async (c) => {
+    const b = await c.req.json();
+    const sent = broadcast({ from: b.from, subject: b.subject, body: b.body, priority: b.priority });
+    return c.json({ ok: true, sent });
+  });
 
   return api;
 }
