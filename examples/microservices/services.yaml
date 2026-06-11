@@ -1,0 +1,32 @@
+# Example service graph (spec §16.1). Used as the M3 contract-aware-routing
+# fixture: a breaking change to billing-service's POST /invoices should route
+# warnings to checkout-service (direct), frontend-web (indirect), and e2e-tests.
+services:
+  billing-service:
+    repo: git@github.com:org/billing-service.git
+    provides:
+      - openapi: openapi/billing.yaml
+      - event: InvoiceCreated
+    consumed_by:
+      - checkout-service
+      - finance-dashboard
+
+  checkout-service:
+    repo: git@github.com:org/checkout-service.git
+    consumes:
+      - service: billing-service
+        api: POST /invoices
+      - event: PaymentAuthorized
+
+  frontend-web:
+    repo: git@github.com:org/frontend-web.git
+    consumes:
+      - service: checkout-service
+        api: POST /checkout
+
+  e2e-tests:
+    repo: git@github.com:org/e2e-tests.git
+    owns_integration_tests_for:
+      - billing-service
+      - checkout-service
+      - frontend-web

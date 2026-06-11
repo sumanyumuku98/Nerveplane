@@ -1,0 +1,34 @@
+{
+  "name": "nerveplane",
+  "version": "0.1.0",
+  "description": "Local-first, MCP-compatible coordination plane for autonomous coding agents",
+  "type": "module",
+  "bin": {
+    "nerveplane": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "daemon": "bun run src/index.ts daemon",
+    "dev": "bun --watch run src/index.ts daemon",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun run src/storage/migrate.ts",
+    "build": "bun build --compile --target=bun src/index.ts --outfile dist/nerveplane"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "drizzle-orm": "^0.44.0",
+    "hono": "4.12.23",
+    "simple-git": "^3.27.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "drizzle-kit": "^0.31.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  }
+}
