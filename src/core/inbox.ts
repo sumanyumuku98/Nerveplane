@@ -1,6 +1,7 @@
-import { and, desc, eq, isNull, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, ne, isNull, inArray, sql } from "drizzle-orm";
 import { getDb } from "../storage/db.ts";
 import {
+  agents,
   deliveries,
   events,
   messages,
@@ -48,6 +49,22 @@ export function sendMessage(input: SendMessageInput): { id: string } {
     })
     .run();
   return { id };
+}
+
+/** Human action (spec §21.3): broadcast an announcement to all active agents. */
+export function broadcast(input: { from?: string | null; subject?: string; body: string; priority?: Severity }): number {
+  const active = getDb()
+    .select()
+    .from(agents)
+    .where(ne(agents.status, "offline"))
+    .all();
+  let sent = 0;
+  for (const a of active) {
+    if (a.id === input.from) continue;
+    sendMessage({ senderAgentId: input.from ?? null, recipientAgentId: a.id, subject: input.subject, body: input.body, priority: input.priority ?? "info" });
+    sent++;
+  }
+  return sent;
 }
 
 export interface UpdateItem {
