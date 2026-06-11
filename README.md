@@ -7,6 +7,7 @@
 **The coordination plane for autonomous coding agents** — local-first, MCP-compatible, repo- and service-aware.
 
 [![CI](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml/badge.svg)](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-online-22c55e?logo=readthedocs&logoColor=white)](https://sumanyumuku98.github.io/Nerveplane/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.2-fbf0df?logo=bun&logoColor=black)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -19,7 +20,7 @@ Nerveplane keeps parallel coding agents aligned across **repos, branches, git wo
 
 > As developers run multiple coding agents in parallel, the bottleneck shifts from code generation to coordination. Nerveplane is the missing coordination layer.
 
-See [`docs/nerveplane_spec.md`](docs/nerveplane_spec.md) for the full product & technical spec.
+📖 **[Documentation](https://sumanyumuku98.github.io/Nerveplane/)** · [Getting Started](https://sumanyumuku98.github.io/Nerveplane/guide/getting-started) · [Concepts](https://sumanyumuku98.github.io/Nerveplane/guide/concepts) · [full spec](docs/nerveplane_spec.md)
 
 ## Status
 
