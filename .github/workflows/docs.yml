@@ -19,7 +19,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  # Always runs (push + PR): catches docs build breaks even when Pages isn't deployed.
+  verify:
     name: build site
     runs-on: ubuntu-latest
     steps:
@@ -29,26 +30,28 @@ jobs:
         with:
           bun-version: "1.2.18"
       - run: bun install --frozen-lockfile
-      - name: Configure Pages
-        uses: actions/configure-pages@v6.0.0
-        with:
-          enablement: true
-      - name: Build VitePress site
-        run: bun run docs:build
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v5.0.0
-        with:
-          path: docs/.vitepress/dist
+      - run: bun run docs:build
 
+  # Deploys to GitHub Pages — opt-in via repo variable DEPLOY_DOCS=true once
+  # Pages is enabled (requires a public repo or a paid plan for private repos).
   deploy:
     name: deploy to Pages
-    # Build verifies on every PR; deploy only from main.
-    if: github.event_name != 'pull_request'
-    needs: build
+    if: github.event_name != 'pull_request' && vars.DEPLOY_DOCS == 'true'
+    needs: verify
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: "1.2.18"
+      - run: bun install --frozen-lockfile
+      - uses: actions/configure-pages@v6.0.0
+      - run: bun run docs:build
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: docs/.vitepress/dist
       - id: deployment
         uses: actions/deploy-pages@v5.0.0
