@@ -23,6 +23,8 @@ Project:
   agents                 List active agents
   events                 Show recent coordination events
   conflicts              List open conflict warnings (resolve/dismiss <id>)
+  service scan [path]    Load a services.yaml into the service graph
+  services               List services and contracts
   eval                   Run the deterministic conflict-detection eval
 
 Integration (usually invoked by tools, not humans):
@@ -181,6 +183,43 @@ export async function runCli(argv: string[]): Promise<number> {
       for (const w of conflicts) {
         process.stdout.write(`  [${w.severity}] ${w.type.padEnd(13)} ${w.summary}\n        → ${w.suggestedAction ?? ""}  (${w.id})\n`);
       }
+      return 0;
+    }
+
+    case "service": {
+      if (rest[0] !== "scan") {
+        process.stderr.write("usage: nerveplane service scan [path-to-services.yaml]\n");
+        return 1;
+      }
+      const path = rest[1] ?? `${process.cwd()}/services.yaml`;
+      const res = await api<{ ok: boolean; services?: number; contracts?: number; error?: string }>(
+        "POST",
+        "/api/v1/services/scan",
+        { path },
+      );
+      process.stdout.write(
+        res.data?.ok
+          ? `nerveplane: loaded ${res.data.services} services, ${res.data.contracts} contracts from ${path}\n`
+          : `nerveplane: scan failed — ${res.data?.error ?? "unknown error"}\n`,
+      );
+      return res.data?.ok ? 0 : 1;
+    }
+
+    case "services": {
+      const res = await api<{ services: { id: string; name: string }[]; contracts: { name: string; type: string; serviceId: string | null; path: string | null }[] }>(
+        "GET",
+        "/api/v1/services",
+      );
+      const svcs = res.data?.services ?? [];
+      const contracts = res.data?.contracts ?? [];
+      if (svcs.length === 0) {
+        process.stdout.write("nerveplane: no services (run `nerveplane service scan`)\n");
+        return 0;
+      }
+      process.stdout.write("services:\n");
+      for (const s of svcs) process.stdout.write(`  ${s.name}\n`);
+      process.stdout.write("contracts:\n");
+      for (const ct of contracts) process.stdout.write(`  ${ct.type.padEnd(9)} ${ct.name.padEnd(20)} ${ct.path ?? ""} (${ct.serviceId})\n`);
       return 0;
     }
 

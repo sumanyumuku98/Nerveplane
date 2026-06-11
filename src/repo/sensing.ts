@@ -6,6 +6,7 @@ import { getDb } from "../storage/db.ts";
 import { agentWorktreeState } from "../storage/schema.ts";
 import { nowIso } from "../core/util.ts";
 import { detectConflictsForRepo } from "../conflicts/detect.ts";
+import { detectContractChanges, resetContractDetection } from "../services/detect.ts";
 
 /**
  * Passive sensing engine (plan Part C.1 — the core of M1's differentiation).
@@ -46,7 +47,11 @@ export async function senseAgent(agentId: string, worktreePath: string, repoId: 
     })
     .run();
 
-  // First observation establishes a baseline — no event (we only signal change).
+  // Contract-aware detection runs every tick (even on baseline): an agent may
+  // register with a contract edit already present (plan M3.4).
+  await detectContractChanges(agentId, worktreePath, repoId, state.mergeBase, [...current]);
+
+  // First observation establishes a baseline — no files_changed event.
   if (!prev) {
     snapshots.set(agentId, { changed: current, branch: state.branch });
     return 0;
@@ -118,4 +123,5 @@ export function startSensing(): () => void {
 /** Test helper: clear in-memory snapshots. */
 export function resetSensing(): void {
   snapshots.clear();
+  resetContractDetection();
 }

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../storage/db.ts";
 import { agents, tasks, type Severity, type EventType } from "../storage/schema.ts";
 import { activeAgentsInRepo, discoverAgents } from "../core/registry.ts";
+import { consumerAgentsFor } from "../services/contracts.ts";
 
 export interface RoutableEvent {
   id: string;
@@ -16,6 +17,8 @@ export interface RoutingHints {
   taskId?: string;
   requiredCapabilities?: string[];
   explicitRecipientIds?: string[];
+  /** Provider service whose contract changed — triggers cross-repo consumer routing. */
+  providerService?: string;
 }
 
 export interface Recipient {
@@ -28,6 +31,12 @@ export interface Recipient {
 const CAPABILITY_EVENTS: ReadonlySet<EventType> = new Set([
   "review_requested",
   "task_handoff_requested",
+]);
+
+const CONTRACT_EVENTS: ReadonlySet<EventType> = new Set([
+  "api_contract_changed",
+  "event_schema_changed",
+  "schema_changed",
 ]);
 
 /**
@@ -68,6 +77,13 @@ export function routeEvent(event: RoutableEvent, hints: RoutingHints = {}): Reci
       for (const a of discoverAgents({ capability: cap })) {
         add(a.id, `has required capability "${cap}"`);
       }
+    }
+  }
+
+  // Rule 5: contract change → active agents in consumer repos, across repos (M3 wedge).
+  if (CONTRACT_EVENTS.has(event.type) && hints.providerService) {
+    for (const { agent, consumer } of consumerAgentsFor(hints.providerService, event.producerAgentId ?? undefined)) {
+      add(agent.id, `consumes ${hints.providerService} (${consumer.kind}: ${consumer.reason})`, "high");
     }
   }
 

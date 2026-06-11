@@ -7,6 +7,7 @@ import { sendMessage, syncAgent, peek } from "../core/inbox.ts";
 import { claimTask, updateTask, handoffTask, requestReview, openTasks } from "../core/tasks.ts";
 import { recordDecision, queryDecisions } from "../core/decisions.ts";
 import { listConflicts, resolveConflict, dismissConflict } from "../core/conflicts.ts";
+import { scanServiceGraph, listServices, listContracts, invalidateGraphCache } from "../services/contracts.ts";
 import { buildJoinPacket } from "../core/join.ts";
 import { recentEvents } from "../core/events.ts";
 
@@ -195,6 +196,20 @@ export function buildApi(): Hono {
     const body = await c.req.json().catch(() => ({}) as { reason?: string });
     return c.json({ ok: dismissConflict(c.req.param("id"), body.reason) });
   });
+
+  // --- service graph & contracts ---
+  api.post("/services/scan", async (c) => {
+    const b = await c.req.json();
+    try {
+      invalidateGraphCache();
+      const counts = scanServiceGraph(b.path);
+      return c.json({ ok: true, ...counts });
+    } catch (err) {
+      return c.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+  api.get("/services", (c) => c.json({ services: listServices(), contracts: listContracts() }));
+  api.get("/contracts", (c) => c.json({ contracts: listContracts() }));
 
   return api;
 }
