@@ -24,6 +24,8 @@ Project:
   events                 Show recent coordination events
   conflicts              List open conflict warnings (resolve/dismiss <id>)
   service scan [path]    Load a services.yaml into the service graph
+  service install        Install a login service unit (launchd/systemd) for the daemon
+  service uninstall      Remove the daemon service unit
   services               List services and contracts
   dashboard              Open the live web dashboard in your browser
   eval                   Run the deterministic conflict-detection eval
@@ -188,8 +190,24 @@ export async function runCli(argv: string[]): Promise<number> {
     }
 
     case "service": {
+      if (rest[0] === "install") {
+        const { installService } = await import("../install/service.ts");
+        const r = installService();
+        process.stdout.write(`nerveplane: wrote service unit\n  ${r.path}\nLoad it with:\n  ${r.loadCmd}\nRemove with: ${r.unloadHint}\n`);
+        return 0;
+      }
+      if (rest[0] === "uninstall") {
+        const { uninstallService } = await import("../install/service.ts");
+        const r = uninstallService();
+        process.stdout.write(
+          r.removed
+            ? `nerveplane: removed ${r.path}\nIf it was loaded, stop it with:\n  ${r.stopCmd}\n`
+            : "nerveplane: no service unit installed\n",
+        );
+        return 0;
+      }
       if (rest[0] !== "scan") {
-        process.stderr.write("usage: nerveplane service scan [path-to-services.yaml]\n");
+        process.stderr.write("usage: nerveplane service <scan [path] | install | uninstall>\n");
         return 1;
       }
       const path = rest[1] ?? `${process.cwd()}/services.yaml`;

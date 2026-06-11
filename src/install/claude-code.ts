@@ -4,8 +4,12 @@ import { fileURLToPath } from "node:url";
 
 const ENTRY = fileURLToPath(new URL("../index.ts", import.meta.url));
 
-/** How to invoke nerveplane subcommands from generated config (dev vs compiled). */
+/** How to invoke nerveplane subcommands from generated config. Prefers a
+ *  `nerveplane` on PATH (installed binary / npm global) → clean config; falls
+ *  back to the dev `bun run <entry>` form. */
 function invocation(sub: string): { command: string; args: string[] } {
+  const onPath = Bun.which("nerveplane");
+  if (onPath) return { command: "nerveplane", args: [sub] };
   const isBun = /bun(\.exe)?$/.test(basename(process.execPath));
   return isBun
     ? { command: process.execPath, args: ["run", ENTRY, sub] }

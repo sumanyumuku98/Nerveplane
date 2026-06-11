@@ -1,10 +1,12 @@
 node_modules/
-dist/
-dashboard/dist/
+/dist/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 .DS_Store
 *.log
+
+# dashboard/dist/index.html is committed (single-file build embedded by the daemon)
+# so the static `with { type: "text" }` import always resolves.
 
 # Local nerveplane state (when run from within this repo during dev)
 .nerveplane/

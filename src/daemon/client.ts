@@ -11,11 +11,21 @@ function baseUrl(): string | null {
   return lock ? `http://${lock.host}:${lock.port}` : null;
 }
 
-/** Re-exec self as the daemon, handling both `bun run` (dev) and compiled binary. */
+/** Spawn the daemon. Prefers a `nerveplane` on PATH (installed binary / npm
+ *  global), else re-execs self via `bun run <entry>` (dev) or the compiled binary. */
 function spawnDaemon(): void {
-  const isBunRuntime = /bun(\.exe)?$/.test(basename(process.execPath));
-  const args = isBunRuntime ? ["run", ENTRY, "daemon"] : ["daemon"];
-  const child = spawn(process.execPath, args, { detached: true, stdio: "ignore" });
+  const onPath = Bun.which("nerveplane");
+  let command: string;
+  let args: string[];
+  if (onPath) {
+    command = onPath;
+    args = ["daemon"];
+  } else {
+    const isBunRuntime = /bun(\.exe)?$/.test(basename(process.execPath));
+    command = process.execPath;
+    args = isBunRuntime ? ["run", ENTRY, "daemon"] : ["daemon"];
+  }
+  const child = spawn(command, args, { detached: true, stdio: "ignore" });
   child.unref();
 }
 

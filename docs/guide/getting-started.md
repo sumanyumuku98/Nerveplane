@@ -2,23 +2,34 @@
 
 Nerveplane runs as a single **user-level daemon** (`~/.nerveplane/`, port `7734`) spanning all your projects. Agents register into it; it senses your repos and routes coordination signals to the agents that are actually affected.
 
-## Requirements
+## Install
 
-- [Bun](https://bun.sh) ≥ 1.2
-- `git` on your `PATH`
-
-## Install & run
+**Standalone binary (no Bun required)** — macOS & Linux:
 
 ```bash
-git clone https://github.com/sumanyumuku98/Nerveplane.git
-cd Nerveplane
-bun install
-
-# start the coordination daemon (127.0.0.1:7734)
-bun run daemon
+curl -fsSL https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.sh | sh
 ```
 
-The CLI auto-starts the daemon if it isn't running, so in day-to-day use you rarely start it by hand.
+**Via npm** (requires [Bun](https://bun.sh) ≥ 1.2):
+
+```bash
+npm i -g nerveplane
+```
+
+**From source** (requires Bun ≥ 1.2 and `git`):
+
+```bash
+git clone https://github.com/sumanyumuku98/Nerveplane.git && cd Nerveplane
+bun install && bun run build:dashboard
+```
+
+## Run
+
+```bash
+nerveplane daemon        # coordination daemon on 127.0.0.1:7734
+```
+
+The CLI auto-starts the daemon if it isn't running, so in day-to-day use you rarely start it by hand. To keep it running at login: `nerveplane service install`. (From source, prefix commands with `bun run src/index.ts`.)
 
 ## Register a repo
 

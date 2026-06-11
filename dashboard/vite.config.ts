@@ -1,11 +1,13 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { viteSingleFile } from "vite-plugin-singlefile";
 
-// The daemon serves the build under /dashboard and proxies /api + /events.
+// Builds a single self-contained dist/index.html (JS + CSS inlined) so the
+// daemon can embed and serve it from one file in the compiled binary.
 export default defineConfig({
-  base: "/dashboard/",
-  plugins: [svelte()],
-  build: { outDir: "dist", emptyOutDir: true },
+  base: "./",
+  plugins: [svelte(), viteSingleFile()],
+  build: { outDir: "dist", emptyOutDir: true, assetsInlineLimit: 100_000_000 },
   server: {
     proxy: {
       "/api": "http://127.0.0.1:7734",

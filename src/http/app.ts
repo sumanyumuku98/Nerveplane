@@ -1,13 +1,14 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { serveStatic } from "hono/bun";
-import { fileURLToPath } from "node:url";
 import { buildApi } from "./api.ts";
 import { bus } from "../core/events.ts";
 import { registerMcpHttp } from "../mcp/http.ts";
 import pkg from "../../package.json" with { type: "json" };
-
-const DASHBOARD_DIST = fileURLToPath(new URL("../../dashboard/dist", import.meta.url));
+// Single self-contained dashboard page (JS+CSS inlined by vite-plugin-singlefile).
+// Static `text` import → bundled into the compiled binary AND read from the npm
+// package on disk. The built file is committed so this import always resolves.
+import dashboardHtmlRaw from "../../dashboard/dist/index.html" with { type: "text" };
+const dashboardHtml = dashboardHtmlRaw as unknown as string;
 
 /**
  * Builds the daemon's HTTP surface: REST (/api/v1), live SSE (/events), the
@@ -47,11 +48,9 @@ export function buildApp(): Hono {
   // Streamable HTTP MCP endpoint (carry-over: lets HTTP MCP clients connect).
   registerMcpHttp(app);
 
-  // Served dashboard (built by vite into dashboard/dist; 404 until built).
-  app.get("/dashboard", serveStatic({ path: `${DASHBOARD_DIST}/index.html` }));
-  app.use(
-    "/dashboard/*",
-    serveStatic({ root: DASHBOARD_DIST, rewriteRequestPath: (p) => p.replace(/^\/dashboard/, "") || "/index.html" }),
+  // Served dashboard — single self-contained page (assets inlined).
+  app.get("/dashboard", (c) =>
+    dashboardHtml ? c.html(dashboardHtml) : c.text("nerveplane: dashboard unavailable", 503),
   );
 
   return app;
