@@ -14,6 +14,7 @@ export default defineConfig({
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
       { text: "Reference", link: "/reference/cli" },
+      { text: "Roadmap", link: "/roadmap" },
       { text: "Spec", link: "/nerveplane_spec" },
     ],
     sidebar: {
