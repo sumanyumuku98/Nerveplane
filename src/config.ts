@@ -14,7 +14,7 @@ export const LOCK_PATH = join(NERVEPLANE_HOME, "daemon.lock");
 export const LOG_PATH = join(NERVEPLANE_HOME, "daemon.log");
 
 export const HOST = "127.0.0.1";
-export const DEFAULT_PORT = 7734;
+export const DEFAULT_PORT = Number(process.env.NERVEPLANE_PORT ?? 7734);
 
 /** Presence: agents heartbeat; the sweeper marks them offline past this TTL. */
 export const HEARTBEAT_TTL_MS = 60_000;

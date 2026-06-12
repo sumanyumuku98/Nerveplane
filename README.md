@@ -88,6 +88,18 @@ bun run src/index.ts install claude-code
 bun run src/index.ts agents | events | conflicts | dashboard | status | stop
 ```
 
+## Demos
+
+Self-contained scripts (spin up an isolated daemon + temp repos, then clean up):
+
+```bash
+sh examples/demo-passive-sensing.sh    # agent B sees agent A's edit — no publish needed
+sh examples/demo-contract-routing.sh   # cross-repo breaking-change routing (spec §29)
+sh examples/hook-check.sh              # the PreToolUse hook injects a warning before an edit
+```
+
+See [`docs/dogfooding.md`](docs/dogfooding.md) for running Nerveplane on itself.
+
 ## Development
 
 ```bash

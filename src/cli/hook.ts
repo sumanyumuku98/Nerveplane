@@ -1,6 +1,17 @@
 import { api } from "../daemon/client.ts";
 import type { UpdateItem } from "../core/inbox.ts";
 
+/** Build the `additionalContext` injected into the agent (pure — unit-tested). */
+export function formatHookContext(updates: UpdateItem[]): string {
+  const lines = updates.map(
+    (u) =>
+      `- [${u.priority.toUpperCase()}] ${u.summary}` +
+      (u.requiredAction ? `\n  → required: ${u.requiredAction}` : "") +
+      (u.reason ? `\n  (why: ${u.reason})` : ""),
+  );
+  return `⚠️ Nerveplane: ${updates.length} high-priority coordination warning(s) before you edit:\n${lines.join("\n")}\n\nCall the \`sync\` tool for full details.`;
+}
+
 /**
  * Claude Code PreToolUse hook (plan Part C.2 — last-mile delivery). Resolves
  * the agent for the current worktree and injects any unread high-severity
@@ -27,13 +38,7 @@ export async function runHook(): Promise<number> {
     const updates = res.data?.updates ?? [];
     if (updates.length === 0) return 0;
 
-    const lines = updates.map(
-      (u) =>
-        `- [${u.priority.toUpperCase()}] ${u.summary}` +
-        (u.requiredAction ? `\n  → required: ${u.requiredAction}` : "") +
-        (u.reason ? `\n  (why: ${u.reason})` : ""),
-    );
-    const additionalContext = `⚠️ Nerveplane: ${updates.length} high-priority coordination warning(s) before you edit:\n${lines.join("\n")}\n\nCall the \`sync\` tool for full details.`;
+    const additionalContext = formatHookContext(updates);
 
     process.stdout.write(
       JSON.stringify({

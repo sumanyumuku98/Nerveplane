@@ -20,7 +20,9 @@
     "developer-tools"
   ],
   "author": "Sumanyu Muku",
-  "bugs": { "url": "https://github.com/sumanyumuku98/Nerveplane/issues" },
+  "bugs": {
+    "url": "https://github.com/sumanyumuku98/Nerveplane/issues"
+  },
   "bin": {
     "nerveplane": "./src/index.ts"
   },
@@ -31,7 +33,9 @@
     "README.md",
     "LICENSE"
   ],
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "start": "bun run src/index.ts",
     "daemon": "bun run src/index.ts daemon",
