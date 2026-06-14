@@ -1,0 +1,38 @@
+name: Deprecate npm versions
+
+# Manually-triggered one-off (and reusable) deprecation of old npm versions.
+# Uses the existing NPM_TOKEN secret — values can't be read back out of GitHub,
+# so this runs the `npm deprecate` inside CI where the token is available.
+on:
+  workflow_dispatch:
+    inputs:
+      range:
+        description: "semver range to deprecate (e.g. <0.4.0)"
+        required: true
+        default: "<0.4.0"
+      message:
+        description: "deprecation message shown on install"
+        required: true
+        default: "Older MIT release — current versions are FSL-1.1-MIT (source-available, https://fsl.software). Please upgrade to >=0.4.0."
+
+permissions:
+  contents: read
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deprecate matching versions
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RANGE: ${{ inputs.range }}
+          MSG: ${{ inputs.message }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not set"; exit 1
+          fi
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          echo "Deprecating nerveplane@${RANGE}"
+          npm deprecate "nerveplane@${RANGE}" "${MSG}"
+          echo "Done. Current deprecation state:"
+          npm view nerveplane versions --json
