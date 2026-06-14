@@ -46,10 +46,16 @@ bun run src/index.ts init      # registers this repo with the daemon
 ## Wire up Claude Code
 
 ```bash
-bun run src/index.ts install claude-code
+# 1. register the MCP server (native Claude Code CLI)
+claude mcp add nerveplane -- nerveplane mcp
+
+# 2. add the proactive warning hook + agent instructions
+nerveplane install claude-code
+
+# 3. restart Claude Code in this directory
 ```
 
-This writes a project `.mcp.json` (the 6 Nerveplane MCP tools) and a `PreToolUse` hook that injects high-severity coordination warnings into the agent's context before it edits. Restart Claude Code in the directory so it picks both up. See [Claude Code Integration](/guide/claude-code) for details.
+Step 1 uses Claude Code's own `claude mcp add` to register Nerveplane's 6 MCP tools (HTTP variant: `claude mcp add --transport http nerveplane http://127.0.0.1:7734/mcp`). Step 2 installs a `PreToolUse` hook that injects high-severity coordination warnings into the agent's context before it edits, and auto-imports the agent instructions into `CLAUDE.md`. No `claude` CLI? Run `nerveplane install claude-code --with-mcp` to write a project `.mcp.json` instead. See [Claude Code Integration](/guide/claude-code) for details.
 
 ## See it work
 

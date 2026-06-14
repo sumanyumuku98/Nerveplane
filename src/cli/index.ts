@@ -19,7 +19,9 @@ Daemon:
 
 Project:
   init                   Register the current repo with the daemon
-  install claude-code    Wire Claude Code into Nerveplane (.mcp.json + hook)
+  install claude-code    Install the Claude Code hook + agent instructions
+                         (register the MCP server with: claude mcp add nerveplane -- nerveplane mcp)
+                         flags: --with-mcp (also write .mcp.json), --print (dry run)
   agents                 List active agents
   events                 Show recent coordination events
   conflicts              List open conflict warnings (resolve/dismiss <id>)
@@ -118,14 +120,22 @@ export async function runCli(argv: string[]): Promise<number> {
     }
 
     case "install": {
-      const target = rest[0];
-      if (target !== "claude-code") {
-        process.stderr.write("usage: nerveplane install claude-code\n");
+      if (rest[0] !== "claude-code") {
+        process.stderr.write("usage: nerveplane install claude-code [--with-mcp] [--print]\n");
         return 1;
       }
-      const result = installClaudeCode(process.cwd());
-      process.stdout.write("nerveplane: installed Claude Code integration\n");
-      for (const f of result.files) process.stdout.write(`  wrote ${f}\n`);
+      const flags = rest.slice(1);
+      const result = installClaudeCode(process.cwd(), {
+        withMcp: flags.includes("--with-mcp"),
+        print: flags.includes("--print"),
+      });
+      const verb = flags.includes("--print") ? "would write" : "wrote";
+      process.stdout.write(
+        flags.includes("--print")
+          ? "nerveplane: dry run — no files changed\n"
+          : "nerveplane: installed the Claude Code hook + agent instructions\n",
+      );
+      for (const f of result.files) process.stdout.write(`  ${verb} ${f}\n`);
       for (const n of result.notes) process.stdout.write(`  • ${n}\n`);
       return 0;
     }
