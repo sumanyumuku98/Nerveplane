@@ -4,73 +4,119 @@
 
 # Nerveplane
 
-**The coordination plane for autonomous coding agents** — local-first, MCP-compatible, repo- and service-aware.
+**The coordination plane for autonomous coding agents** — local-first, MCP-native, repo- and service-aware.
 
 [![CI](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml/badge.svg)](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/nerveplane?logo=npm&color=cb3837)](https://www.npmjs.com/package/nerveplane)
 [![Docs](https://img.shields.io/badge/docs-online-22c55e?logo=readthedocs&logoColor=white)](https://sumanyumuku98.github.io/Nerveplane/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.2-fbf0df?logo=bun&logoColor=black)](https://bun.sh)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![MCP](https://img.shields.io/badge/MCP-compatible-7c3aed)](https://modelcontextprotocol.io)
+[![MCP](https://img.shields.io/badge/MCP-native-7c3aed)](https://modelcontextprotocol.io)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-22c55e.svg)](https://github.com/sumanyumuku98/Nerveplane/pulls)
+
+[Documentation](https://sumanyumuku98.github.io/Nerveplane/) · [Getting Started](https://sumanyumuku98.github.io/Nerveplane/guide/getting-started) · [Concepts](https://sumanyumuku98.github.io/Nerveplane/guide/concepts) · [Roadmap](https://sumanyumuku98.github.io/Nerveplane/roadmap)
 
 </div>
 
-Nerveplane keeps parallel coding agents aligned across **repos, branches, git worktrees, services, and microservice contracts** — passively sensing git state, detecting conflicts, and routing breaking API/contract changes to the agents in *consumer* repos, before merge.
+---
 
-> As developers run multiple coding agents in parallel, the bottleneck shifts from code generation to coordination. Nerveplane is the missing coordination layer.
+> **As developers run multiple coding agents in parallel, the bottleneck shifts from code generation to *coordination*.** Nerveplane is the missing coordination layer.
 
-📖 **[Documentation](https://sumanyumuku98.github.io/Nerveplane/)** · [Getting Started](https://sumanyumuku98.github.io/Nerveplane/guide/getting-started) · [Concepts](https://sumanyumuku98.github.io/Nerveplane/guide/concepts) · [full spec](docs/nerveplane_spec.md)
+## The problem
 
-## Status
+Git worktrees stop two agents from overwriting the same file — but they don't stop **logical drift**:
 
-Early development. Building toward the MVP in milestones (see the build plan):
+- A backend agent changes an API response while a frontend agent builds against the old shape.
+- A service agent changes an event schema while a subscriber in another repo goes stale.
+- Two agents implement the same thing twice, or one deletes what the other depends on.
 
-- **M0 — Scaffold** ✅ — Bun + TypeScript project, SQLite (WAL) storage via Drizzle, user-level daemon with lockfile / graceful shutdown / presence sweeper, CLI dispatch over a local REST API.
-- **M1 — Substrate + passive sensing** ✅ — agent registry (durable `(name, worktree)` identity), typed event log, inbox/`sync`, task state machine, decision ledger, join packets; routing engine (direct / task-owner / same-repo fanout / capability match); the **passive sensing engine** — a repo watcher that emits `files_changed` events from git state *without* requiring agents to report them; the **6 consolidated MCP tools** (`register`/`sync`/`publish`/`task`/`decision`/`discover`) over stdio; `nerveplane install claude-code` (writes `.mcp.json` + a PreToolUse warning-injection hook). _Streamable HTTP MCP transport is sequenced as a near-term follow-up; stdio ships now._
-- **M2 — Repo-aware conflict detection + eval harness** ✅ — pair-wise **same-file** (high) / **same-package** (medium) conflict detection across active agents, routed to exactly the colliding pair; conservative noise budget (fingerprint dedup, dismiss→suppress, auto-resolve when overlap clears); `nerveplane conflicts` to list/resolve/dismiss; a deterministic **eval harness** (`nerveplane eval`) reporting precision/recall/noise (currently 1.0/1.0/0.0 on the seeded scenarios).
-- **M3 — Contract-aware cross-repo routing** ✅ — the differentiation wedge. A **service graph** (`services.yaml`) + in-process **OpenAPI** / **GraphQL** breaking-change diffing (vs the merge-base baseline) + **cross-repo routing**: when an agent changes a provided contract, the daemon senses it and routes high-severity warnings to active agents in **consumer** repos (direct + transitive + test owners), raising `service_contract_conflict` warnings with changed-field evidence. Verified live against spec §29 (billing → checkout/frontend/e2e; unrelated untouched). AsyncAPI/protobuf are pluggable behind the same interface (deferred).
-- **M4 — Dashboard + human-in-the-loop** ✅ — a live **Svelte 5 dashboard** (served at `/dashboard`, `nerveplane dashboard` to open) with SSE-driven Agents / Tasks / Event-timeline / Conflicts / Decisions / Service-graph views and human actions (resolve/dismiss conflicts, approve/reject decisions, broadcast announcements); a `/events` SSE stream and `/api/v1/dashboard` snapshot; and the **Streamable HTTP MCP** endpoint (`/mcp`) sharing the 6 tools with the stdio server.
+None of these are git conflicts, so nothing catches them until merge — and [nearly **1 in 3 AI-generated PRs already hit merge conflicts**](https://arxiv.org/abs/2604.03551) at the file level alone. Nerveplane catches the rest, **before merge**, by grounding agent coordination in real repository and service-dependency state.
+
+## What it does
+
+| | |
+|---|---|
+| 👁️ **Passive sensing** | The daemon watches registered worktrees itself — changed files, diffs, contract changes — and emits coordination events **without agents having to report anything**. |
+| ⚔️ **Conflict detection** | Same-file (high) and same-package (medium) collisions between agents, routed to exactly the pair involved, with a conservative, dismissible noise budget. |
+| 🔗 **Contract-aware cross-repo routing** | Change an OpenAPI / GraphQL / AsyncAPI / protobuf contract and consumer-repo agents (direct, transitive, and test owners) get warned about the breaking change — across repo boundaries. |
+| 📒 **Decision ledger** | Durable project decisions live separately from chat and are queryable by file, repo, service, or task. |
+| 🔌 **MCP-native** | Six consolidated MCP tools over stdio **and** Streamable HTTP, plus a Claude Code PreToolUse hook that injects warnings *before* an agent edits. |
+| 📊 **Live dashboard** | A Svelte dashboard (`/dashboard`) with SSE-driven agents, conflicts, timeline, decisions, and human actions. |
+| 💻 **Local-first** | One user-level daemon, SQLite (WAL), no cloud dependency. Single binary, or `npm`. |
 
 ## Install
 
-No Bun required for the binary installs (the runtime is bundled).
-
-**Homebrew** (macOS / Linux):
+The binary installs bundle the runtime — **no Bun required**.
 
 ```bash
+# Homebrew (macOS / Linux)
 brew install sumanyumuku98/nerveplane/nerveplane
-```
 
-**Shell** (macOS / Linux — arm64 & x64):
-
-```bash
+# Shell (macOS / Linux, arm64 & x64)
 curl -fsSL https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.sh | sh
-```
 
-**Windows** (PowerShell):
-
-```powershell
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.ps1 | iex
+
+# npm (any OS; requires Bun ≥ 1.2)
+npm i -g nerveplane
 ```
 
-**npm** (any OS; requires [Bun](https://bun.sh) ≥ 1.2):
+## Quickstart with Claude Code
 
 ```bash
-npm i -g nerveplane     # or: bunx nerveplane
+# 1. start the coordination daemon (spans all your projects)
+nerveplane daemon            # or: nerveplane service install   (keep it running at login)
+
+# 2. in the repo you're working in
+nerveplane init                              # register this repo
+claude mcp add nerveplane -- nerveplane mcp  # register the MCP server (native Claude Code CLI)
+nerveplane install claude-code               # add the warning hook + agent instructions
+
+# 3. restart Claude Code, then run your agents (one per worktree)
 ```
 
-Then, per project:
+`claude mcp add` wires up the [six MCP tools](https://sumanyumuku98.github.io/Nerveplane/reference/mcp-tools); `nerveplane install claude-code` adds the PreToolUse hook and auto-imports the agent protocol into your `CLAUDE.md` (no `claude` CLI? use `nerveplane install claude-code --with-mcp`). From there, agents call `register` → `sync` → `publish`, and the daemon passively senses everything else — so agents are warned about each other's edits even if they never publish.
+
+## See it work
+
+Self-contained demos (isolated daemon + temp repos, auto-cleaned):
 
 ```bash
-nerveplane daemon                 # start the coordination daemon (127.0.0.1:7734)
-nerveplane init                   # register this repo (run inside it)
-nerveplane install claude-code    # write .mcp.json + the PreToolUse hook
-nerveplane service install        # (optional) keep the daemon running at login
-nerveplane dashboard              # open the live web UI
+sh examples/demo-passive-sensing.sh    # agent B sees agent A's edit — no publish needed
+sh examples/demo-contract-routing.sh   # cross-repo breaking-change routing
+sh examples/hook-check.sh              # the hook injects a warning before an edit
 ```
 
-Agents (Claude Code/Cursor/Codex) then call the MCP tools `register` → `sync` → `publish`/`task`/`decision`/`discover`. The daemon also **passively senses** git changes in registered worktrees, so agents are warned about each other's edits even if they never call `publish`. All durable state lives under `~/.nerveplane/` (override with `NERVEPLANE_HOME`); a single user-level daemon spans all projects.
+## CLI
+
+| Command | Description |
+|---|---|
+| `nerveplane daemon` | Run the coordination daemon (`127.0.0.1:7734`) |
+| `nerveplane init` | Register the current repo |
+| `nerveplane install claude-code` | Install the PreToolUse hook + agent instructions (`--with-mcp`, `--print`) |
+| `nerveplane service install` | Keep the daemon running at login (launchd / systemd) |
+| `nerveplane agents` · `events` · `conflicts` | Inspect state |
+| `nerveplane service scan [path]` · `services` | Load / list the service graph |
+| `nerveplane dashboard` | Open the live web UI |
+| `nerveplane eval` | Run the deterministic conflict-detection eval |
+
+## How it works
+
+```
+CLI / Claude Code / Cursor / Codex   (MCP stdio + HTTP · REST · SSE · A2A later)
+        │
+        ▼
+  Nerveplane daemon (127.0.0.1:7734, ~/.nerveplane/)
+   ├─ Integration  MCP tools · Hono REST · SSE · Claude Code hook
+   ├─ Core         Agent Registry · Presence(TTL) · Tasks · Event Log · Decisions
+   ├─ Sensing      repo watcher (git poll) · diff analyzer   ← passive, no agent compliance
+   ├─ Service      service graph (YAML) · OpenAPI/GraphQL/AsyncAPI/protobuf diff
+   ├─ Routing      recipient selection · severity · dedup/suppression · conflict detection
+   └─ Storage      SQLite (WAL) via Drizzle → optional Postgres later
+```
+
+Everything an agent sees flows through one write path (`emitEvent` → routing → per-recipient deliveries → SSE), whether it came from an agent's `publish` or the passive sensing loop. See the [Concepts](https://sumanyumuku98.github.io/Nerveplane/guide/concepts) and [full spec](docs/nerveplane_spec.md).
 
 ## Run from source
 
@@ -78,58 +124,28 @@ Requires [Bun](https://bun.sh) ≥ 1.2.
 
 ```bash
 git clone https://github.com/sumanyumuku98/Nerveplane.git && cd Nerveplane
-bun install
-bun run build:dashboard             # build the embedded dashboard once
-bun run daemon                      # coordination daemon (127.0.0.1:7734)
-
-# in your repo (another shell) — the daemon auto-starts if not running:
-bun run src/index.ts init
-bun run src/index.ts install claude-code
-bun run src/index.ts agents | events | conflicts | dashboard | status | stop
+bun install && bun run build:dashboard
+bun run daemon                       # then use `bun run src/index.ts <command>`
 ```
-
-## Demos
-
-Self-contained scripts (spin up an isolated daemon + temp repos, then clean up):
-
-```bash
-sh examples/demo-passive-sensing.sh    # agent B sees agent A's edit — no publish needed
-sh examples/demo-contract-routing.sh   # cross-repo breaking-change routing (spec §29)
-sh examples/hook-check.sh              # the PreToolUse hook injects a warning before an edit
-```
-
-See [`docs/dogfooding.md`](docs/dogfooding.md) for running Nerveplane on itself.
 
 ## Development
 
 ```bash
-bun test                # unit + integration tests
-bun run typecheck       # tsc --noEmit (strict)
-bun run build           # single-binary via bun build --compile
-bun run build:dashboard # build the Svelte dashboard → dashboard/dist (served at /dashboard)
-bun run dev:dashboard   # dashboard dev server (proxies /api + /events to :7734)
+bun test            # unit + integration tests
+bun run typecheck   # tsc --noEmit (strict)
+bun run build       # single-binary via bun build --compile
+bun run docs:dev    # docs site (VitePress)
 ```
 
-The dashboard is served from `dashboard/dist`; run `bun run build:dashboard` once before `nerveplane dashboard` (embedding it into the single binary is a planned follow-up).
+CI (typecheck · tests · conflict-detection eval gate · dashboard + binary build) runs on every push and PR.
 
-## Architecture
+## Status
 
-```
-CLI / Claude Code / Cursor / Codex   (MCP stdio+HTTP · REST · SSE · A2A later)
-        │
-        ▼
-  Nerveplane daemon (127.0.0.1:7734, ~/.nerveplane/)
-   ├─ Integration  MCP tools · Hono REST · SSE · hooks installer
-   ├─ Core         Agent Registry · Presence(TTL) · Tasks · Event Log · Decisions · Artifacts
-   ├─ Sensing      repo watcher (git poll + FS watch) · diff analyzer   ← passive, no agent compliance
-   ├─ Service      service-graph (YAML) · contract parsers / diff
-   ├─ Routing      recipient selection · severity · dedup/suppression · conflict detection
-   └─ Storage      SQLite WAL via Drizzle → optional Postgres later
-```
+**v0.2.0 — MVP complete and published.** Passive sensing, intra- and cross-repo conflict/contract detection (4 formats), decision ledger, dashboard, MCP (stdio + HTTP), and full distribution (npm + binaries + Homebrew). Future work (deeper semantic intelligence, A2A, team/distributed mode) is tracked in the [roadmap](https://sumanyumuku98.github.io/Nerveplane/roadmap).
 
 ## Contributing
 
-PRs welcome. CI (typecheck · tests · conflict-detection eval gate · dashboard + binary build) runs on every push and pull request via [GitHub Actions](.github/workflows/ci.yml). Before opening a PR: `bun test && bun run typecheck`.
+PRs welcome — one focused PR per change, with `bun test && bun run typecheck` green. See the [roadmap](https://sumanyumuku98.github.io/Nerveplane/roadmap) for where to start.
 
 ## License
 
