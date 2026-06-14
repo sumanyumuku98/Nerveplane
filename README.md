@@ -142,7 +142,7 @@ CI (typecheck · tests · conflict-detection eval gate · dashboard + binary bui
 
 ## Status
 
-**v0.2.0 — MVP complete and published.** Passive sensing, intra- and cross-repo conflict/contract detection (4 formats), decision ledger, dashboard, MCP (stdio + HTTP), and full distribution (npm + binaries + Homebrew). Future work (deeper semantic intelligence, A2A, team/distributed mode) is tracked in the [roadmap](https://sumanyumuku98.github.io/Nerveplane/roadmap).
+**v0.5.0 — published.** Passive sensing, intra- and cross-repo conflict/contract detection (4 formats), decision ledger, direct real-time agent-to-agent chat, dashboard, MCP (stdio + HTTP, 7 tools), and full distribution (npm + binaries + Homebrew). Future work (deeper semantic intelligence, the cross-org A2A protocol + signed identities, team/distributed mode) is tracked in the [roadmap](https://sumanyumuku98.github.io/Nerveplane/roadmap).
 
 ## Contributing
 
