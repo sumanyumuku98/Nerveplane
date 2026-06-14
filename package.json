@@ -1,13 +1,13 @@
 {
   "name": "nerveplane",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local-first, MCP-compatible coordination plane for autonomous coding agents",
   "homepage": "https://sumanyumuku98.github.io/Nerveplane/",
   "repository": {
     "type": "git",
     "url": "https://github.com/sumanyumuku98/Nerveplane.git"
   },
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "type": "module",
   "keywords": [
     "ai-agents",
