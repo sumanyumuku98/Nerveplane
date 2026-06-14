@@ -9,7 +9,7 @@
 [![CI](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml/badge.svg)](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/nerveplane?logo=npm&color=cb3837)](https://www.npmjs.com/package/nerveplane)
 [![Docs](https://img.shields.io/badge/docs-online-22c55e?logo=readthedocs&logoColor=white)](https://sumanyumuku98.github.io/Nerveplane/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.2-fbf0df?logo=bun&logoColor=black)](https://bun.sh)
 [![MCP](https://img.shields.io/badge/MCP-native-7c3aed)](https://modelcontextprotocol.io)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-22c55e.svg)](https://github.com/sumanyumuku98/Nerveplane/pulls)
@@ -149,4 +149,6 @@ PRs welcome — one focused PR per change, with `bun test && bun run typecheck` 
 
 ## License
 
-[MIT](LICENSE) © 2026 Sumanyu Muku
+[FSL-1.1-MIT](LICENSE) © 2026 Sumanyu Muku — the [Functional Source License](https://fsl.software): source-available, free to use and self-host, no competing/commercial resale; **converts to MIT two years after each release**. (Versions ≤ 0.3.0 were published under MIT and stay MIT.)
+
+Contributions are accepted under the [DCO](CONTRIBUTING.md).
