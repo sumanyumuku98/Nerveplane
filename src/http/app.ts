@@ -33,14 +33,23 @@ export function buildApp(): Hono {
       const unsub = bus.subscribe((event) => {
         void stream.writeSSE({ data: JSON.stringify(event) });
       });
-      stream.onAbort(unsub);
+      // Direct messages travel on a named "chat" channel (avoids colliding with
+      // the default "message" event name) so the dashboard can render chat live.
+      const unsubMsg = bus.onMessage((msg) => {
+        void stream.writeSSE({ event: "chat", data: JSON.stringify(msg) });
+      });
+      const stop = () => {
+        unsub();
+        unsubMsg();
+      };
+      stream.onAbort(stop);
       try {
         while (!stream.closed && !stream.aborted) {
           await stream.sleep(25_000);
           await stream.writeSSE({ event: "heartbeat", data: "{}" });
         }
       } finally {
-        unsub();
+        stop();
       }
     }),
   );

@@ -1,0 +1,1 @@
+CREATE INDEX `idx_messages_thread` ON `messages` (`thread_id`,`created_at`);

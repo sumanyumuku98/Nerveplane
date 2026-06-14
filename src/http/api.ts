@@ -3,7 +3,8 @@ import type { AgentStatus, EventType, Severity } from "../storage/schema.ts";
 import { registerAgent, heartbeat, setStatus, discoverAgents, getAgent, agentByWorktree } from "../core/registry.ts";
 import { upsertRepoByPath, listRepos } from "../core/repos.ts";
 import { emitEvent } from "../core/events.ts";
-import { sendMessage, syncAgent, peek, broadcast } from "../core/inbox.ts";
+import { sendMessage, syncAgent, peek, peekMessages, broadcast } from "../core/inbox.ts";
+import { sendChat, replyChat, threadMessages, listThreads, allThreads, waitForChat } from "../core/chat.ts";
 import { claimTask, updateTask, handoffTask, requestReview, openTasks } from "../core/tasks.ts";
 import { recordDecision, queryDecisions, recentDecisions, setDecisionStatus } from "../core/decisions.ts";
 import { listConflicts, resolveConflict, dismissConflict } from "../core/conflicts.ts";
@@ -14,7 +15,7 @@ import { recentEvents } from "../core/events.ts";
 /**
  * Granular local REST API (mounted at /api/v1). It is the single in-process
  * surface that the CLI, the dashboard, and the stdio MCP proxy all call into.
- * The MCP layer's 6 consolidated tools map onto these endpoints.
+ * The MCP layer's 7 consolidated tools map onto these endpoints.
  */
 export function buildApi(): Hono {
   const api = new Hono();
@@ -82,11 +83,14 @@ export function buildApi(): Hono {
     return c.json({ agent: agent ?? null });
   });
 
-  // High-severity peek for the hook: returns unread warnings, acking just those.
+  // High-severity peek for the hook: returns unread warnings + unread direct
+  // messages, acking just those (so they don't re-inject on every tool call).
   api.post("/agents/:id/peek", async (c) => {
     const body = await c.req.json().catch(() => ({}) as { min_severity?: Severity; ack?: boolean });
-    const items = peek(c.req.param("id"), (body.min_severity as Severity) ?? "high", body.ack ?? true);
-    return c.json({ updates: items });
+    const ack = body.ack ?? true;
+    const items = peek(c.req.param("id"), (body.min_severity as Severity) ?? "high", ack);
+    const msgs = peekMessages(c.req.param("id"), { ack });
+    return c.json({ updates: items, messages: msgs });
   });
 
   // --- sync (consolidated inbox pull) ---
@@ -130,6 +134,50 @@ export function buildApi(): Hono {
       },
     );
     return c.json({ kind: "event", event_id: result.event.id, recipients: result.recipients });
+  });
+
+  // --- chat (direct agent-to-agent conversation) ---
+  api.post("/chat/send", async (c) => {
+    const b = await c.req.json();
+    return c.json(
+      sendChat({
+        senderAgentId: b.agent_id ?? b.agentId ?? b.sender_agent_id ?? b.senderAgentId,
+        recipientAgentId: b.to ?? b.recipient_agent_id ?? b.recipientAgentId,
+        recipientGroup: b.recipient_group ?? b.recipientGroup,
+        threadId: b.thread_id ?? b.threadId,
+        subject: b.subject,
+        body: b.body,
+        priority: b.priority as Severity | undefined,
+      }),
+    );
+  });
+
+  api.post("/chat/reply", async (c) => {
+    const b = await c.req.json();
+    return c.json(
+      replyChat({
+        agentId: b.agent_id ?? b.agentId,
+        threadId: b.thread_id ?? b.threadId,
+        subject: b.subject,
+        body: b.body,
+        priority: b.priority as Severity | undefined,
+      }),
+    );
+  });
+
+  api.get("/chat/threads", (c) => {
+    const agentId = c.req.query("agentId") ?? c.req.query("agent_id");
+    return c.json({ threads: agentId ? listThreads(agentId) : allThreads() });
+  });
+
+  api.get("/chat/threads/:threadId", (c) => c.json({ messages: threadMessages(c.req.param("threadId")) }));
+
+  // Long-poll: blocks (≤50s) until a new direct message arrives — real-time chat.
+  api.post("/chat/wait", async (c) => {
+    const b = await c.req.json().catch(() => ({}) as { agent_id?: string; thread_id?: string; timeout_ms?: number });
+    const agentId = b.agent_id ?? b.agentId;
+    const result = await waitForChat(agentId, { threadId: b.thread_id ?? b.threadId, timeoutMs: b.timeout_ms ?? b.timeoutMs });
+    return c.json(result);
   });
 
   // --- tasks ---

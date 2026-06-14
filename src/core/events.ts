@@ -3,6 +3,7 @@ import { getDb } from "../storage/db.ts";
 import {
   events,
   deliveries,
+  messages,
   type Severity,
   type EventType,
   type Artifact,
@@ -12,6 +13,7 @@ import { routeEvent, type RoutingHints } from "../routing/engine.ts";
 import { newId, nowIso } from "./util.ts";
 
 export type Event = typeof events.$inferSelect;
+export type ChatMessage = typeof messages.$inferSelect;
 export type Delivery = typeof deliveries.$inferSelect;
 
 export interface EmitEventInput {
@@ -107,10 +109,14 @@ export function recentEvents(limit = 50): Event[] {
   return getDb().select().from(events).orderBy(desc(events.createdAt)).limit(limit).all();
 }
 
-/** Minimal in-process event bus — SSE/dashboard subscribers attach here (M4). */
+/** Minimal in-process event bus — SSE/dashboard subscribers and the chat
+ *  long-poll attach here. Two channels: typed events and direct messages (kept
+ *  separate so a message delivery never masquerades as an `Event`). */
 type BusListener = (event: Event, recipientIds: string[]) => void;
+type MessageListener = (msg: ChatMessage) => void;
 class EventBus {
   private listeners = new Set<BusListener>();
+  private messageListeners = new Set<MessageListener>();
   emit(event: Event, recipientIds: string[]): void {
     for (const l of this.listeners) {
       try {
@@ -123,6 +129,20 @@ class EventBus {
   subscribe(l: BusListener): () => void {
     this.listeners.add(l);
     return () => this.listeners.delete(l);
+  }
+  /** Notify subscribers of a freshly-stored direct message (real-time chat). */
+  emitMessage(msg: ChatMessage): void {
+    for (const l of this.messageListeners) {
+      try {
+        l(msg);
+      } catch (err) {
+        console.error("nerveplane: message bus listener failed:", err);
+      }
+    }
+  }
+  onMessage(l: MessageListener): () => void {
+    this.messageListeners.add(l);
+    return () => this.messageListeners.delete(l);
   }
 }
 export const bus = new EventBus();

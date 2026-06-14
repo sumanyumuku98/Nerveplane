@@ -3,7 +3,7 @@ import { z } from "zod";
 import pkg from "../../package.json" with { type: "json" };
 
 /**
- * The 6 consolidated MCP tools (plan Part C.3), defined once and shared by both
+ * The 7 consolidated MCP tools (plan Part C.3), defined once and shared by both
  * the stdio server and the Streamable HTTP endpoint. A `ToolCtx` provides the
  * backend: REST-proxy for the spawned stdio bridge, core-direct inside the
  * daemon. Schemas/descriptions live here so the two transports never drift.
@@ -15,6 +15,7 @@ export interface ToolCtx {
   task(args: Record<string, unknown>): Promise<unknown>;
   decision(args: Record<string, unknown>): Promise<unknown>;
   discover(args: Record<string, unknown>): Promise<unknown>;
+  chat(args: Record<string, unknown>): Promise<unknown>;
 }
 
 function ok(data: unknown) {
@@ -112,5 +113,21 @@ export function registerTools(server: McpServer, ctx: ToolCtx): void {
       status: z.string().optional(),
     },
     (args) => wrap(() => ctx.discover(args)),
+  );
+
+  server.tool(
+    "chat",
+    "Talk directly to another agent. action='send' (DM an agent by id), 'reply' (continue a thread), 'wait' (BLOCK until a reply arrives — real-time, use this when you need an answer before continuing), 'threads' (list your conversations), 'history' (messages in a thread). Pair a `discover` to find who to talk to.",
+    {
+      agent_id: z.string().describe("your own agent id"),
+      action: z.enum(["send", "reply", "wait", "threads", "history"]),
+      to: z.string().optional().describe("recipient agent id (for action='send')"),
+      thread_id: z.string().optional().describe("conversation id (for reply/wait/history; from 'threads')"),
+      subject: z.string().optional(),
+      body: z.string().optional().describe("message text (for send/reply)"),
+      priority: z.enum(["info", "low", "medium", "high", "blocking"]).optional(),
+      timeout_ms: z.number().optional().describe("max ms to block on action='wait' (default 25000, max 50000)"),
+    },
+    (args) => wrap(() => ctx.chat(args)),
   );
 }

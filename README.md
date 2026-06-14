@@ -40,8 +40,9 @@ None of these are git conflicts, so nothing catches them until merge — and [ne
 | ⚔️ **Conflict detection** | Same-file (high) and same-package (medium) collisions between agents, routed to exactly the pair involved, with a conservative, dismissible noise budget. |
 | 🔗 **Contract-aware cross-repo routing** | Change an OpenAPI / GraphQL / AsyncAPI / protobuf contract and consumer-repo agents (direct, transitive, and test owners) get warned about the breaking change — across repo boundaries. |
 | 📒 **Decision ledger** | Durable project decisions live separately from chat and are queryable by file, repo, service, or task. |
-| 🔌 **MCP-native** | Six consolidated MCP tools over stdio **and** Streamable HTTP, plus a Claude Code PreToolUse hook that injects warnings *before* an agent edits. |
-| 📊 **Live dashboard** | A Svelte dashboard (`/dashboard`) with SSE-driven agents, conflicts, timeline, decisions, and human actions. |
+| 💬 **Direct agent-to-agent chat** | A first-class `chat` tool: threaded DMs between agents with **real-time delivery** — an agent can `wait` (block) for a reply, and incoming messages are injected before a teammate's next edit. |
+| 🔌 **MCP-native** | Seven consolidated MCP tools over stdio **and** Streamable HTTP, plus a Claude Code PreToolUse hook that injects warnings *before* an agent edits. |
+| 📊 **Live dashboard** | A Svelte dashboard (`/dashboard`) with SSE-driven agents, conflicts, timeline, chat, decisions, and human actions. |
 | 💻 **Local-first** | One user-level daemon, SQLite (WAL), no cloud dependency. Single binary, or `npm`. |
 
 ## Install
@@ -76,7 +77,7 @@ nerveplane install claude-code               # add the warning hook + agent inst
 # 3. restart Claude Code, then run your agents (one per worktree)
 ```
 
-`claude mcp add` wires up the [six MCP tools](https://sumanyumuku98.github.io/Nerveplane/reference/mcp-tools); `nerveplane install claude-code` adds the PreToolUse hook and auto-imports the agent protocol into your `CLAUDE.md` (no `claude` CLI? use `nerveplane install claude-code --with-mcp`). From there, agents call `register` → `sync` → `publish`, and the daemon passively senses everything else — so agents are warned about each other's edits even if they never publish.
+`claude mcp add` wires up the [seven MCP tools](https://sumanyumuku98.github.io/Nerveplane/reference/mcp-tools); `nerveplane install claude-code` adds the PreToolUse hook and auto-imports the agent protocol into your `CLAUDE.md` (no `claude` CLI? use `nerveplane install claude-code --with-mcp`). From there, agents call `register` → `sync` → `publish`, and the daemon passively senses everything else — so agents are warned about each other's edits even if they never publish.
 
 ## See it work
 

@@ -32,7 +32,7 @@ features:
     details: Durable project decisions live separately from chat history and are queryable by file, repo, service, or task.
   - icon: 🔌
     title: MCP-native
-    details: Six consolidated MCP tools over stdio and Streamable HTTP. A two-minute installer wires Claude Code with an .mcp.json and a warning-injection hook.
+    details: Seven consolidated MCP tools (including direct agent-to-agent chat) over stdio and Streamable HTTP. A two-minute installer wires Claude Code with an .mcp.json and a warning-injection hook.
   - icon: 💻
     title: Local-first
     details: A single user-level daemon, SQLite (WAL) storage, a live Svelte dashboard — runs on your laptop with no cloud dependency.
