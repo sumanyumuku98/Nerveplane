@@ -35,7 +35,9 @@ You are working alongside other autonomous coding agents. Nerveplane keeps you a
 3. Before changing API contracts, DB schemas, or shared types, call \`publish\` so affected agents are warned.
 4. Record durable decisions with \`decision\`.
 
-High-priority warnings are also injected automatically before you edit files.`;
+5. To coordinate directly with a specific agent, use \`chat\` (find them with \`discover\`): \`action='send'\` to DM, \`'reply'\` to continue a thread. When you need their answer before proceeding, call \`chat\` with \`action='wait'\` to block until they reply.
+
+High-priority warnings and new direct messages are also injected automatically before you edit files.`;
 
 export interface InstallOptions {
   withMcp?: boolean; // also write a project .mcp.json (fallback when the `claude` CLI isn't used)

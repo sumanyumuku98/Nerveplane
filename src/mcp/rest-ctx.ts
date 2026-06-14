@@ -13,4 +13,18 @@ export const restCtx: ToolCtx = {
     const qs = new URLSearchParams(Object.entries(a).filter(([, v]) => v != null) as [string, string][]).toString();
     return api("GET", `/api/v1/agents${qs ? `?${qs}` : ""}`).then((r) => r.data);
   },
+  chat: (a) => {
+    switch (a.action) {
+      case "reply":
+        return api("POST", "/api/v1/chat/reply", a).then((r) => r.data);
+      case "wait":
+        return api("POST", "/api/v1/chat/wait", a).then((r) => r.data);
+      case "threads":
+        return api("GET", `/api/v1/chat/threads?agentId=${encodeURIComponent(String(a.agent_id))}`).then((r) => r.data);
+      case "history":
+        return api("GET", `/api/v1/chat/threads/${encodeURIComponent(String(a.thread_id))}`).then((r) => r.data);
+      default: // "send"
+        return api("POST", "/api/v1/chat/send", a).then((r) => r.data);
+    }
+  },
 };

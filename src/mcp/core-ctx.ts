@@ -3,6 +3,7 @@ import type { AgentStatus, EventType, Severity } from "../storage/schema.ts";
 import { registerAgent, heartbeat, discoverAgents } from "../core/registry.ts";
 import { emitEvent } from "../core/events.ts";
 import { sendMessage, syncAgent } from "../core/inbox.ts";
+import { sendChat, replyChat, threadMessages, listThreads, waitForChat } from "../core/chat.ts";
 import { claimTask, updateTask, handoffTask, requestReview } from "../core/tasks.ts";
 import { recordDecision, queryDecisions } from "../core/decisions.ts";
 import { buildJoinPacket } from "../core/join.ts";
@@ -80,5 +81,21 @@ export const coreCtx: ToolCtx = {
 
   async discover(a) {
     return { agents: discoverAgents({ capability: s(a.capability), repoId: s(a.repo_id), status: s(a.status) as AgentStatus | undefined }) };
+  },
+
+  async chat(a) {
+    const agentId = s(a.agent_id)!;
+    switch (a.action) {
+      case "reply":
+        return replyChat({ agentId, threadId: s(a.thread_id)!, subject: s(a.subject), body: a.body as string, priority: a.priority as Severity | undefined });
+      case "wait":
+        return waitForChat(agentId, { threadId: s(a.thread_id), timeoutMs: a.timeout_ms as number | undefined });
+      case "threads":
+        return { threads: listThreads(agentId) };
+      case "history":
+        return { messages: threadMessages(s(a.thread_id)!) };
+      default: // "send"
+        return sendChat({ senderAgentId: agentId, recipientAgentId: s(a.to), recipientGroup: s(a.recipient_group), threadId: s(a.thread_id), subject: s(a.subject), body: a.body as string, priority: a.priority as Severity | undefined });
+    }
   },
 };

@@ -1,6 +1,6 @@
 # MCP Tools
 
-Nerveplane exposes **six consolidated tools** (rather than the spec's 17) to keep the per-turn schema-token cost low. They are served identically over **stdio** (what Claude Code spawns) and **Streamable HTTP** (`/mcp`).
+Nerveplane exposes **seven consolidated tools** (rather than the spec's 17) to keep the per-turn schema-token cost low. They are served identically over **stdio** (what Claude Code spawns) and **Streamable HTTP** (`/mcp`).
 
 ## `register`
 
@@ -65,5 +65,23 @@ Find other agents by capability, repo, or status.
 ```jsonc
 { "capability": "frontend" }
 ```
+
+## `chat`
+
+Direct, threaded agent-to-agent conversation, with **real-time delivery**. Drive it via `action`:
+
+- `send` — DM another agent by id (a pair shares one rolling thread).
+- `reply` — continue a thread (recipients are inferred from the thread).
+- `wait` — **block** (≤50s) until a reply arrives, instead of polling `sync`. Use this when you need an answer before continuing.
+- `threads` — list your conversations (with unread counts).
+- `history` — fetch the messages in a thread.
+
+```jsonc
+// ask a teammate and wait for the answer
+{ "agent_id": "agent_be", "action": "send", "to": "agent_fe", "body": "Is the /invoices shape final?" }
+{ "agent_id": "agent_be", "action": "wait", "timeout_ms": 25000 }
+```
+
+New direct messages are also surfaced automatically before the recipient's next edit (via the PreToolUse hook), so a teammate sees your message even if they never call `wait`.
 
 > The full granular surface (heartbeat, set-status, per-action task endpoints, etc.) is available via the [CLI](/reference/cli) and the local REST API; the MCP layer is intentionally consolidated.

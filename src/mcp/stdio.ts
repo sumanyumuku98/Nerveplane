@@ -5,7 +5,7 @@ import { restCtx } from "./rest-ctx.ts";
 
 /**
  * The stdio MCP server is what Claude Code / Cursor / Codex spawn. It exposes
- * the 6 consolidated tools (shared with the HTTP endpoint via registerTools) and
+ * the 7 consolidated tools (shared with the HTTP endpoint via registerTools) and
  * proxies each to the daemon's REST API (restCtx) so the daemon stays the single
  * writer and always runs sensing.
  */

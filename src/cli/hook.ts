@@ -1,15 +1,26 @@
 import { api } from "../daemon/client.ts";
-import type { UpdateItem } from "../core/inbox.ts";
+import type { UpdateItem, InboxMessage } from "../core/inbox.ts";
 
 /** Build the `additionalContext` injected into the agent (pure — unit-tested). */
-export function formatHookContext(updates: UpdateItem[]): string {
-  const lines = updates.map(
-    (u) =>
-      `- [${u.priority.toUpperCase()}] ${u.summary}` +
-      (u.requiredAction ? `\n  → required: ${u.requiredAction}` : "") +
-      (u.reason ? `\n  (why: ${u.reason})` : ""),
-  );
-  return `⚠️ Nerveplane: ${updates.length} high-priority coordination warning(s) before you edit:\n${lines.join("\n")}\n\nCall the \`sync\` tool for full details.`;
+export function formatHookContext(updates: UpdateItem[], messages: InboxMessage[] = []): string {
+  const parts: string[] = [];
+  if (updates.length) {
+    const lines = updates.map(
+      (u) =>
+        `- [${u.priority.toUpperCase()}] ${u.summary}` +
+        (u.requiredAction ? `\n  → required: ${u.requiredAction}` : "") +
+        (u.reason ? `\n  (why: ${u.reason})` : ""),
+    );
+    parts.push(`⚠️ Nerveplane: ${updates.length} high-priority coordination warning(s) before you edit:\n${lines.join("\n")}`);
+  }
+  if (messages.length) {
+    const lines = messages.map((m) => `- 💬 ${m.from ?? "another agent"}${m.subject ? ` — ${m.subject}` : ""}: ${m.body}`);
+    parts.push(
+      `💬 Nerveplane: ${messages.length} new direct message(s):\n${lines.join("\n")}\nReply with the \`chat\` tool (action='reply').`,
+    );
+  }
+  parts.push("Call the `sync` tool for full details.");
+  return parts.join("\n\n");
 }
 
 /**
@@ -31,14 +42,15 @@ export async function runHook(): Promise<number> {
     const agentId = lookup.data?.agent?.id;
     if (!agentId) return 0; // no registered agent here — stay silent
 
-    const res = await api<{ updates: UpdateItem[] }>("POST", `/api/v1/agents/${agentId}/peek`, {
+    const res = await api<{ updates: UpdateItem[]; messages: InboxMessage[] }>("POST", `/api/v1/agents/${agentId}/peek`, {
       min_severity: "high",
       ack: true,
     });
     const updates = res.data?.updates ?? [];
-    if (updates.length === 0) return 0;
+    const messages = res.data?.messages ?? [];
+    if (updates.length === 0 && messages.length === 0) return 0;
 
-    const additionalContext = formatHookContext(updates);
+    const additionalContext = formatHookContext(updates, messages);
 
     process.stdout.write(
       JSON.stringify({

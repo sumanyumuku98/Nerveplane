@@ -177,7 +177,10 @@ export const messages = sqliteTable(
     readAt: text("read_at"),
     createdAt: text("created_at").notNull(),
   },
-  (t) => [index("idx_messages_recipient").on(t.recipientAgentId, t.createdAt)],
+  (t) => [
+    index("idx_messages_recipient").on(t.recipientAgentId, t.createdAt),
+    index("idx_messages_thread").on(t.threadId, t.createdAt),
+  ],
 );
 
 export const decisions = sqliteTable("decisions", {

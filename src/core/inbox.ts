@@ -10,6 +10,7 @@ import {
   type Severity,
 } from "../storage/schema.ts";
 import { newId, nowIso } from "./util.ts";
+import { bus } from "./events.ts";
 
 export const SEVERITY_RANK: Record<Severity, number> = {
   info: 0,
@@ -33,21 +34,23 @@ export interface SendMessageInput {
 export function sendMessage(input: SendMessageInput): { id: string } {
   const db = getDb();
   const id = newId("msg");
-  db.insert(messages)
-    .values({
-      id,
-      threadId: input.threadId ?? null,
-      senderAgentId: input.senderAgentId ?? null,
-      recipientAgentId: input.recipientAgentId ?? null,
-      recipientGroup: input.recipientGroup ?? null,
-      subject: input.subject ?? null,
-      body: input.body,
-      relatedEventId: input.relatedEventId ?? null,
-      priority: input.priority ?? "info",
-      readAt: null,
-      createdAt: nowIso(),
-    })
-    .run();
+  const row = {
+    id,
+    threadId: input.threadId ?? null,
+    senderAgentId: input.senderAgentId ?? null,
+    recipientAgentId: input.recipientAgentId ?? null,
+    recipientGroup: input.recipientGroup ?? null,
+    subject: input.subject ?? null,
+    body: input.body,
+    relatedEventId: input.relatedEventId ?? null,
+    priority: input.priority ?? "info",
+    readAt: null,
+    createdAt: nowIso(),
+  };
+  db.insert(messages).values(row).run();
+  // Wake live subscribers (SSE dashboard + the chat long-poll). This makes both
+  // `publish kind='message'` and the `chat` tool deliver in real time.
+  bus.emitMessage(row);
   return { id };
 }
 
@@ -83,11 +86,53 @@ export interface UpdateItem {
 
 export interface InboxMessage {
   id: string;
+  threadId: string | null;
   from: string | null;
   subject: string | null;
   body: string;
   priority: Severity;
   createdAt: string;
+}
+
+/** Project a stored message row into the wire shape agents/tools see. */
+export function toInboxMessage(m: typeof messages.$inferSelect): InboxMessage {
+  return {
+    id: m.id,
+    threadId: m.threadId,
+    from: m.senderAgentId,
+    subject: m.subject,
+    body: m.body,
+    priority: m.priority,
+    createdAt: m.createdAt,
+  };
+}
+
+/**
+ * Peek at unread direct messages for an agent (newest first, capped), optionally
+ * acking just those — the message counterpart to `peek()`, used by the hook to
+ * surface DMs before the agent's next edit without repeating them every call.
+ */
+export function peekMessages(agentId: string, opts: { ack?: boolean; limit?: number } = {}): InboxMessage[] {
+  const db = getDb();
+  const rows = db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.recipientAgentId, agentId), isNull(messages.readAt)))
+    .orderBy(desc(messages.createdAt))
+    .limit(opts.limit ?? 5)
+    .all();
+  if ((opts.ack ?? true) && rows.length) {
+    db.update(messages)
+      .set({ readAt: nowIso() })
+      .where(
+        inArray(
+          messages.id,
+          rows.map((m) => m.id),
+        ),
+      )
+      .run();
+  }
+  return rows.map(toInboxMessage);
 }
 
 export interface SyncResult {
@@ -170,14 +215,7 @@ export function syncAgent(agentId: string, opts: { ack?: boolean } = { ack: true
     .where(and(eq(messages.recipientAgentId, agentId), isNull(messages.readAt)))
     .orderBy(desc(messages.createdAt))
     .all();
-  const inboxMessages: InboxMessage[] = msgRows.map((m) => ({
-    id: m.id,
-    from: m.senderAgentId,
-    subject: m.subject,
-    body: m.body,
-    priority: m.priority,
-    createdAt: m.createdAt,
-  }));
+  const inboxMessages: InboxMessage[] = msgRows.map(toInboxMessage);
 
   // Open conflict warnings whose agent set includes this agent.
   const conflicts = db
