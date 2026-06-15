@@ -18,7 +18,12 @@ export const restCtx: ToolCtx = {
       case "reply":
         return api("POST", "/api/v1/chat/reply", a).then((r) => r.data);
       case "wait":
-        return api("POST", "/api/v1/chat/wait", a).then((r) => r.data);
+        // The long-poll can be interrupted if the daemon restarts mid-wait.
+        // Retry once — safe because `wait` is read-only (ensureDaemon() inside
+        // api() respawns the daemon). Never auto-retry the writes above.
+        return api("POST", "/api/v1/chat/wait", a)
+          .then((r) => r.data)
+          .catch(() => api("POST", "/api/v1/chat/wait", a).then((r) => r.data));
       case "threads":
         return api("GET", `/api/v1/chat/threads?agentId=${encodeURIComponent(String(a.agent_id))}`).then((r) => r.data);
       case "history":

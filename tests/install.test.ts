@@ -9,15 +9,33 @@ function tmp() {
   return mkdtempSync(join(tmpdir(), "np-install-"));
 }
 
-test("default install: hook + instructions + CLAUDE.md import, no .mcp.json", () => {
+test("default install: PreToolUse + SessionStart hooks + instructions + CLAUDE.md import, no .mcp.json", () => {
   const dir = tmp();
   installClaudeCode(dir);
 
   const settings = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8"));
   expect(settings.hooks.PreToolUse[0].matcher).toContain("Edit");
+  expect(settings.hooks.SessionStart[0].hooks[0].command).toContain("session-start");
   expect(existsSync(join(dir, ".claude", "nerveplane-instructions.md"))).toBe(true);
   expect(readFileSync(join(dir, "CLAUDE.md"), "utf8")).toContain("@.claude/nerveplane-instructions.md");
   expect(existsSync(join(dir, ".mcp.json"))).toBe(false); // MCP is registered via `claude mcp add`
+});
+
+test("global install writes into ~/.claude (user scope), not the project", () => {
+  const home = tmp(); // isolated home so we never touch the real ~/.claude
+  const res = installClaudeCode("/some/repo", { global: true, home });
+  const userClaude = join(home, ".claude");
+
+  const settings = JSON.parse(readFileSync(join(userClaude, "settings.json"), "utf8"));
+  expect(settings.hooks.PreToolUse[0].command ?? settings.hooks.PreToolUse[0].hooks?.[0]?.command).toBeDefined();
+  expect(settings.hooks.SessionStart[0].hooks[0].command).toContain("session-start");
+  expect(existsSync(join(userClaude, "nerveplane-instructions.md"))).toBe(true);
+  // user-scope CLAUDE.md uses a relative import that resolves under ~/.claude
+  expect(readFileSync(join(userClaude, "CLAUDE.md"), "utf8")).toContain("@nerveplane-instructions.md");
+  // nothing under the project, and the MCP note recommends user scope
+  expect(existsSync(join("/some/repo", ".claude"))).toBe(false);
+  expect(res.files.every((f) => f.startsWith(home))).toBe(true);
+  expect(res.notes.some((n) => n.includes("--scope user"))).toBe(true);
 });
 
 test("CLAUDE.md import is idempotent across re-runs", () => {

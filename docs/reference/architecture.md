@@ -7,7 +7,7 @@ CLI / Claude Code / Cursor / Codex   (MCP stdio + Streamable HTTP · REST · SSE
         │
         ▼
   Nerveplane daemon (127.0.0.1:7734, ~/.nerveplane/)
-   ├─ Integration  MCP (6 tools) · Hono REST (/api/v1) · SSE (/events) · hooks installer · dashboard (/dashboard)
+   ├─ Integration  MCP (7 tools) · Hono REST (/api/v1) · SSE (/events) · hooks installer · dashboard (/dashboard)
    ├─ Core         Agent Registry · Presence (TTL) · Task SM · Typed Event Log · Inbox · Decision Ledger · Artifacts
    ├─ Sensing      repo watcher (git poll) · diff analyzer · contract-change detector   ← passive, no agent compliance
    ├─ Service      service graph (YAML) · contract registry · OpenAPI/GraphQL diff
