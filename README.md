@@ -65,19 +65,27 @@ npm i -g nerveplane
 
 ## Quickstart with Claude Code
 
+**Once per machine** — global setup (hooks, login service, MCP):
+
 ```bash
-# 1. start the coordination daemon (spans all your projects)
-nerveplane daemon            # or: nerveplane service install   (keep it running at login)
-
-# 2. in the repo you're working in
-nerveplane init                              # register this repo
-claude mcp add nerveplane -- nerveplane mcp  # register the MCP server (native Claude Code CLI)
-nerveplane install claude-code               # add the warning hook + agent instructions
-
-# 3. restart Claude Code, then run your agents (one per worktree)
+nerveplane setup                                          # global hooks + login service + register this repo
+claude mcp add --scope user nerveplane -- nerveplane mcp  # register the MCP server for all projects
+# restart Claude Code
 ```
 
-`claude mcp add` wires up the [seven MCP tools](https://sumanyumuku98.github.io/Nerveplane/reference/mcp-tools); `nerveplane install claude-code` adds the PreToolUse hook and auto-imports the agent protocol into your `CLAUDE.md` (no `claude` CLI? use `nerveplane install claude-code --with-mcp`). From there, agents call `register` → `sync` → `publish`, and the daemon passively senses everything else — so agents are warned about each other's edits even if they never publish.
+That's it — **no per-repo setup**. The hooks are installed at user scope (`~/.claude`), the daemon runs as a login service, and **every agent you launch auto-registers** (via a SessionStart hook). Run your agents (one per worktree) and Nerveplane senses, routes, and warns automatically.
+
+<details><summary>Prefer per-repo or manual setup?</summary>
+
+```bash
+nerveplane daemon                            # or: nerveplane service install (keep it running at login)
+nerveplane init                              # (optional) pre-register this repo
+claude mcp add nerveplane -- nerveplane mcp  # register the MCP server (native Claude Code CLI)
+nerveplane install claude-code               # project-scoped hooks (no `claude` CLI? add --with-mcp)
+```
+</details>
+
+`claude mcp add` wires up the [seven MCP tools](https://sumanyumuku98.github.io/Nerveplane/reference/mcp-tools); the hooks auto-register each agent and inject warnings/DMs before edits. Agents call `register` (to add capabilities/task) → `sync` → `publish`, and the daemon passively senses everything else — so agents are warned about each other's edits even if they never publish.
 
 ## See it work
 
@@ -93,9 +101,10 @@ sh examples/hook-check.sh              # the hook injects a warning before an ed
 
 | Command | Description |
 |---|---|
+| `nerveplane setup` | One-time machine setup: global hooks + login service + register this repo (`--no-service`, `--print`) |
 | `nerveplane daemon` | Run the coordination daemon (`127.0.0.1:7734`) |
-| `nerveplane init` | Register the current repo |
-| `nerveplane install claude-code` | Install the PreToolUse hook + agent instructions (`--with-mcp`, `--print`) |
+| `nerveplane install claude-code` | Install the Claude Code hooks + agent instructions (`--global`, `--with-mcp`, `--print`) |
+| `nerveplane init` | (Optional) register the current repo — agents auto-register too |
 | `nerveplane service install` | Keep the daemon running at login (launchd / systemd) |
 | `nerveplane agents` · `events` · `conflicts` | Inspect state |
 | `nerveplane service scan [path]` · `services` | Load / list the service graph |

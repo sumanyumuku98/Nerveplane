@@ -10,12 +10,18 @@ All commands talk to the user-level daemon over its local REST API and auto-star
 | `nerveplane status` | Show daemon status and health. |
 | `nerveplane stop` | Stop the running daemon. |
 
+## Setup
+
+| Command | Description |
+|---|---|
+| `nerveplane setup` | One-time machine setup: global Claude Code hooks + login service + register this repo. Flags: `--no-service`, `--print`. |
+| `nerveplane install claude-code` | Install Claude Code hooks + agent instructions. Flags: `--global` (user scope `~/.claude`, applies to all repos), `--with-mcp` (write a project `.mcp.json`), `--print` (dry run). |
+| `nerveplane init` | (Optional) register the current repo. Agents auto-register via the SessionStart hook and the `register` tool, so this is rarely needed. |
+
 ## Project
 
 | Command | Description |
 |---|---|
-| `nerveplane init` | Register the current repo with the daemon. |
-| `nerveplane install claude-code` | Wire Claude Code in (`.mcp.json` + PreToolUse hook + instructions). |
 | `nerveplane agents` | List active agents (status, branch, capabilities). |
 | `nerveplane events` | Show recent coordination events. |
 | `nerveplane conflicts` | List open conflict warnings. |
@@ -44,6 +50,7 @@ Usually invoked by tools, not humans:
 |---|---|
 | `nerveplane mcp` | Run the stdio MCP server (spawned by Claude Code / Cursor / Codex). |
 | `nerveplane hook` | `PreToolUse` hook entrypoint (reads JSON on stdin). |
+| `nerveplane session-start` | `SessionStart` hook entrypoint — auto-registers the agent for the current worktree. |
 
 > During development, prefix with `bun run src/index.ts` (e.g. `bun run src/index.ts agents`). A compiled binary (`bun run build`) exposes them directly as `nerveplane <command>`.
 

@@ -3,8 +3,10 @@ import { api, baseUrl, ensureDaemon } from "../daemon/client.ts";
 import { readLiveLock } from "../daemon/lock.ts";
 import { runStdioMcp } from "../mcp/stdio.ts";
 import { runHook } from "./hook.ts";
+import { runSessionStart } from "./session-start.ts";
 import { runEvalCli } from "../eval/run.ts";
 import { installClaudeCode } from "../install/claude-code.ts";
+import { installService, serviceStatus } from "../install/service.ts";
 import { DEFAULT_PORT } from "../config.ts";
 import pkg from "../../package.json" with { type: "json" };
 
@@ -17,11 +19,16 @@ Daemon:
   status                 Show daemon status and health
   stop                   Stop the running daemon
 
+Setup:
+  setup                  One-time machine setup: global hook + instructions, login
+                         service, and register this repo (flags: --no-service, --print)
+  install claude-code    Install the Claude Code hooks + agent instructions
+                         flags: --global (user scope, all repos), --with-mcp, --print
+                         (register the MCP server: claude mcp add --scope user nerveplane -- nerveplane mcp)
+  init                   Register the current repo (optional — the agent 'register'
+                         tool does this automatically; prefer 'nerveplane setup')
+
 Project:
-  init                   Register the current repo with the daemon
-  install claude-code    Install the Claude Code hook + agent instructions
-                         (register the MCP server with: claude mcp add nerveplane -- nerveplane mcp)
-                         flags: --with-mcp (also write .mcp.json), --print (dry run)
   agents                 List active agents
   events                 Show recent coordination events
   conflicts              List open conflict warnings (resolve/dismiss <id>)
@@ -35,6 +42,7 @@ Project:
 Integration (usually invoked by tools, not humans):
   mcp                    Run the stdio MCP server (spawned by Claude Code/Cursor)
   hook                   PreToolUse hook entrypoint (reads JSON on stdin)
+  session-start          SessionStart hook entrypoint — auto-registers the agent
 
   --help, -h             Show this help
   --version, -v          Show version
@@ -66,9 +74,15 @@ export async function runCli(argv: string[]): Promise<number> {
     }
 
     case "status": {
+      const svc = serviceStatus();
       const lock = readLiveLock();
       if (!lock) {
         process.stdout.write("nerveplane: daemon not running\n");
+        process.stdout.write(
+          svc.installed
+            ? "  supervised: yes (login service installed) — it will start on next use\n"
+            : "  supervised: no — run `nerveplane service install` to keep it always-on\n",
+        );
         return 0;
       }
       const url = baseUrl();
@@ -78,8 +92,13 @@ export async function runCli(argv: string[]): Promise<number> {
       } catch {
         /* unreachable despite live lock */
       }
+      const uptime = (() => {
+        const ms = Date.now() - new Date(lock.startedAt).getTime();
+        const m = Math.floor(ms / 60000);
+        return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+      })();
       process.stdout.write(
-        `nerveplane daemon: running\n  pid:     ${lock.pid}\n  url:     ${url}\n  started: ${lock.startedAt}\n  health:  ${health ? "ok" : "unreachable"}\n`,
+        `nerveplane daemon: running\n  pid:        ${lock.pid}\n  url:        ${url}\n  version:    ${lock.version}\n  uptime:     ${uptime}\n  health:     ${health ? "ok" : "unreachable"}\n  supervised: ${svc.installed ? "yes (login service)" : "no — run `nerveplane service install` to keep it always-on"}\n`,
       );
       return 0;
     }
@@ -104,6 +123,49 @@ export async function runCli(argv: string[]): Promise<number> {
     case "hook":
       return runHook();
 
+    case "session-start":
+      return runSessionStart();
+
+    case "setup": {
+      const flags = rest;
+      const print = flags.includes("--print");
+      const noService = flags.includes("--no-service");
+      process.stdout.write(print ? "nerveplane setup (dry run):\n" : "nerveplane setup:\n");
+
+      // 1) Daemon up + register this repo.
+      if (!print) {
+        await ensureDaemon();
+        const reg = await api<{ repo: { name: string } }>("POST", "/api/v1/repos/register", { path: process.cwd() });
+        process.stdout.write(reg.ok ? `  ✓ registered repo "${reg.data.repo.name}"\n` : "  • repo registration skipped (daemon unreachable)\n");
+      }
+
+      // 2) Global Claude Code install (hooks + instructions, user scope).
+      const result = installClaudeCode(process.cwd(), { global: true, print });
+      const verb = print ? "would write" : "✓ wrote";
+      for (const f of result.files) process.stdout.write(`  ${verb} ${f}\n`);
+
+      // 3) Login service (keep the daemon always-on) unless opted out.
+      if (noService) {
+        process.stdout.write("  • skipped login service (--no-service)\n");
+      } else if (print) {
+        process.stdout.write("  would install a login service (launchd/systemd)\n");
+      } else {
+        try {
+          const svc = installService();
+          process.stdout.write(`  ✓ installed login service: ${svc.path}\n    load it: ${svc.loadCmd}\n`);
+        } catch (err) {
+          process.stdout.write(`  • login service skipped (${err instanceof Error ? err.message : String(err)}) — run \`nerveplane service install\` later\n`);
+        }
+      }
+
+      // 4) Next steps.
+      process.stdout.write("\nFinish setup:\n");
+      const run = `${Bun.which("nerveplane") ?? "nerveplane"} mcp`;
+      process.stdout.write(`  1. Register the MCP server (once):  claude mcp add --scope user nerveplane -- ${run}\n`);
+      process.stdout.write("  2. Restart Claude Code. New agents auto-register; no per-repo setup needed.\n");
+      return 0;
+    }
+
     case "init": {
       await ensureDaemon();
       const res = await api<{ repo: { id: string; name: string; path: string } }>("POST", "/api/v1/repos/register", {
@@ -114,18 +176,22 @@ export async function runCli(argv: string[]): Promise<number> {
         return 1;
       }
       process.stdout.write(
-        `nerveplane: registered repo "${res.data.repo.name}" (${res.data.repo.id})\n  path: ${res.data.repo.path}\nNext: nerveplane install claude-code\n`,
+        `nerveplane: registered repo "${res.data.repo.name}" (${res.data.repo.id})\n  path: ${res.data.repo.path}\n` +
+          "Note: this is optional — an agent's `register` tool registers the repo automatically.\n" +
+          "For full machine setup (global hooks + service), run: nerveplane setup\n",
       );
       return 0;
     }
 
     case "install": {
       if (rest[0] !== "claude-code") {
-        process.stderr.write("usage: nerveplane install claude-code [--with-mcp] [--print]\n");
+        process.stderr.write("usage: nerveplane install claude-code [--global] [--with-mcp] [--print]\n");
         return 1;
       }
       const flags = rest.slice(1);
+      const global = flags.includes("--global");
       const result = installClaudeCode(process.cwd(), {
+        global,
         withMcp: flags.includes("--with-mcp"),
         print: flags.includes("--print"),
       });
@@ -133,7 +199,7 @@ export async function runCli(argv: string[]): Promise<number> {
       process.stdout.write(
         flags.includes("--print")
           ? "nerveplane: dry run — no files changed\n"
-          : "nerveplane: installed the Claude Code hook + agent instructions\n",
+          : `nerveplane: installed the Claude Code hooks + agent instructions${global ? " (user scope — all repos)" : ""}\n`,
       );
       for (const f of result.files) process.stdout.write(`  ${verb} ${f}\n`);
       for (const n of result.notes) process.stdout.write(`  • ${n}\n`);

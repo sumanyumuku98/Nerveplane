@@ -25,6 +25,12 @@ export interface ServiceResult {
 const macPlistPath = () => join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const systemdPath = () => join(homedir(), ".config", "systemd", "user", "nerveplane.service");
 
+/** Whether a login service unit (launchd/systemd) is installed for the daemon. */
+export function serviceStatus(): { installed: boolean; path: string } {
+  const path = platform() === "darwin" ? macPlistPath() : systemdPath();
+  return { installed: existsSync(path), path };
+}
+
 /** Install a login service that keeps `nerveplane daemon` running. */
 export function installService(): ServiceResult {
   const { program, args } = daemonCommand();
@@ -47,7 +53,11 @@ export function installService(): ServiceResult {
 ${argXml}
   </array>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+    <key>Crashed</key><true/>
+  </dict>
   <key>StandardOutPath</key><string>${join(home, "daemon.out.log")}</string>
   <key>StandardErrorPath</key><string>${join(home, "daemon.err.log")}</string>
 </dict>

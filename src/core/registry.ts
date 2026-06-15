@@ -36,17 +36,19 @@ export async function registerAgent(input: RegisterInput): Promise<AgentWithCaps
   const repo = input.repoPath ? await upsertRepoByPath(input.repoPath) : null;
   const worktreePath = input.worktreePath ?? input.repoPath ?? input.cwd ?? null;
 
-  const existing = db
-    .select()
-    .from(agents)
-    .where(and(eq(agents.name, input.name), worktreePath ? eq(agents.worktreePath, worktreePath) : eq(agents.worktreePath, agents.worktreePath)))
-    .get();
+  // One agent per worktree: when a worktree is known, dedup on it (any name) so a
+  // SessionStart auto-register and a later `register` tool call (richer name/caps)
+  // reconcile to ONE row. Without a worktree, fall back to the (name) key.
+  const existing = worktreePath
+    ? db.select().from(agents).where(eq(agents.worktreePath, worktreePath)).get()
+    : db.select().from(agents).where(eq(agents.name, input.name)).get();
 
   let id: string;
   if (existing) {
     id = existing.id;
     db.update(agents)
       .set({
+        name: input.name, // a tool `register` may rename the auto-registered row
         displayName: input.displayName ?? existing.displayName,
         status: "available",
         repoId: repo?.id ?? existing.repoId,

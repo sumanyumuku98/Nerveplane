@@ -35,27 +35,30 @@ nerveplane daemon        # coordination daemon on 127.0.0.1:7734
 
 The CLI auto-starts the daemon if it isn't running, so in day-to-day use you rarely start it by hand. To keep it running at login: `nerveplane service install`. (From source, prefix commands with `bun run src/index.ts`.)
 
-## Register a repo
+## One-time setup (recommended)
 
-From inside any git repo or worktree:
-
-```bash
-bun run src/index.ts init      # registers this repo with the daemon
-```
-
-## Wire up Claude Code
+Run this **once per machine** — it installs the Claude Code hooks at user scope (`~/.claude`, so they apply to every repo), installs a login service so the daemon is always-on, and registers the current repo:
 
 ```bash
-# 1. register the MCP server (native Claude Code CLI)
-claude mcp add nerveplane -- nerveplane mcp
-
-# 2. add the proactive warning hook + agent instructions
-nerveplane install claude-code
-
-# 3. restart Claude Code in this directory
+nerveplane setup                                          # global hooks + login service + repo
+claude mcp add --scope user nerveplane -- nerveplane mcp  # register the MCP server for all projects
+# restart Claude Code
 ```
 
-Step 1 uses Claude Code's own `claude mcp add` to register Nerveplane's 6 MCP tools (HTTP variant: `claude mcp add --transport http nerveplane http://127.0.0.1:7734/mcp`). Step 2 installs a `PreToolUse` hook that injects high-severity coordination warnings into the agent's context before it edits, and auto-imports the agent instructions into `CLAUDE.md`. No `claude` CLI? Run `nerveplane install claude-code --with-mcp` to write a project `.mcp.json` instead. See [Claude Code Integration](/guide/claude-code) for details.
+After this there is **no per-repo setup**: every agent you launch is **auto-registered** by a `SessionStart` hook, and the `PreToolUse` hook injects coordination warnings + direct messages before edits. Add `--no-service` to skip the login service, or `--print` for a dry run.
+
+## Manual / per-repo setup
+
+If you'd rather not install globally:
+
+```bash
+nerveplane init                              # (optional) pre-register this repo — agents register themselves anyway
+claude mcp add nerveplane -- nerveplane mcp  # register the MCP server (HTTP: --transport http http://127.0.0.1:7734/mcp)
+nerveplane install claude-code               # project-scoped hooks in ./.claude (no `claude` CLI? add --with-mcp)
+# restart Claude Code in this directory
+```
+
+`init` is optional — an agent's `register` tool (and the SessionStart hook) register the repo automatically. See [Claude Code Integration](/guide/claude-code) for details.
 
 ## See it work
 

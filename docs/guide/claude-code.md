@@ -1,15 +1,21 @@
 # Claude Code Integration
 
-Two steps — register the MCP server with Claude Code's native CLI, then add Nerveplane's proactive hook:
+**Fastest path — once per machine:**
 
 ```bash
-# 1. register the MCP server
-claude mcp add nerveplane -- nerveplane mcp
+nerveplane setup                                          # global hooks + login service + register this repo
+claude mcp add --scope user nerveplane -- nerveplane mcp  # MCP server for all projects
+# restart Claude Code
+```
 
-# 2. add the PreToolUse hook + agent instructions
-nerveplane install claude-code
+This installs the hooks at user scope (`~/.claude`), so there's **no per-repo setup** — every agent you launch auto-registers, and warnings/DMs are injected before edits.
 
-# 3. restart Claude Code
+If you'd rather wire a single repo (project scope):
+
+```bash
+claude mcp add nerveplane -- nerveplane mcp   # register the MCP server
+nerveplane install claude-code                # project-scoped hooks + instructions
+# restart Claude Code
 ```
 
 ## 1. The MCP server (`claude mcp add`)
@@ -17,25 +23,29 @@ nerveplane install claude-code
 `claude mcp add nerveplane -- nerveplane mcp` registers Nerveplane's [seven MCP tools](/reference/mcp-tools) the idiomatic way. The spawned stdio server is a thin bridge that proxies to the daemon's REST API, keeping the daemon the single writer.
 
 - Scope: add `--scope user` (all your projects) or `--scope project` (commit a shared `.mcp.json`); default is local to you.
-- HTTP transport (no stdio bridge): `claude mcp add --transport http nerveplane http://127.0.0.1:7734/mcp` — the same six tools are served over both transports from one definition.
+- HTTP transport (no stdio bridge): `claude mcp add --transport http nerveplane http://127.0.0.1:7734/mcp` — the same seven tools are served over both transports from one definition.
 
-## 2. The `PreToolUse` hook (`nerveplane install claude-code`)
+## 2. The hooks (`nerveplane install claude-code`)
 
-This is the piece `claude mcp add` can't do. Routing puts a warning in an agent's inbox, but **routed ≠ read** — MCP has no reliable server→agent push. The hook closes that last mile: before the agent runs `Edit`/`Write`/`MultiEdit`, it resolves the agent for the current worktree and injects any unread **high-severity** warnings straight into the agent's context. It always exits 0 and never blocks the edit — coordination must never break the host tool.
+This is the piece `claude mcp add` can't do. Two hooks:
 
-`nerveplane install claude-code` writes:
-- `.claude/settings.json` — the PreToolUse hook.
-- `.claude/nerveplane-instructions.md` — the agent protocol (below).
-- appends `@.claude/nerveplane-instructions.md` to `CLAUDE.md` (idempotent) so the instructions load automatically — no copy-paste.
+- **`SessionStart`** → runs `nerveplane session-start`, which **auto-registers** the agent for the current worktree the moment a session begins — so registration never depends on the model remembering to call `register`. It also seeds the session with a short coordination summary (active peers + "call `sync`").
+- **`PreToolUse`** → routing puts a warning in an agent's inbox, but **routed ≠ read** — MCP has no reliable server→agent push. Before the agent runs `Edit`/`Write`/`MultiEdit`, this hook resolves the agent for the current worktree and injects any unread **high-severity** warnings and **direct messages** straight into its context. Both hooks always exit 0 and never block — coordination must never break the host tool.
 
-Flags: `--with-mcp` (also write a project `.mcp.json` — use this if you don't have the `claude` CLI), `--print` (dry-run).
+`nerveplane install claude-code` writes (under `.claude/` for the project, or `~/.claude/` with `--global`):
+- `settings.json` — the `SessionStart` + `PreToolUse` hooks.
+- `nerveplane-instructions.md` — the agent protocol (below).
+- appends the instructions `@import` to `CLAUDE.md` (idempotent) so they load automatically — no copy-paste.
+
+Flags: `--global` (user scope — install once, applies to all repos), `--with-mcp` (also write a project `.mcp.json` — use this if you don't have the `claude` CLI), `--print` (dry-run).
 
 ## 3. The agent protocol (auto-imported into `CLAUDE.md`)
 
-1. **At startup**, call `register` and read the join packet before editing.
+1. You're **auto-registered** at session start; call `register` to add your capabilities/task and read the join packet.
 2. **Periodically and before finalizing**, call `sync`.
 3. Before changing API contracts, DB schemas, or shared types, call `publish`.
 4. Record durable decisions with `decision`.
+5. To talk to a specific agent, use `chat` (and `chat action='wait'` to block for a reply).
 
 ## Other clients
 
