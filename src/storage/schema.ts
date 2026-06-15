@@ -80,6 +80,10 @@ export const agents = sqliteTable(
     baseBranch: text("base_branch"),
     cwd: text("cwd"),
     metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    // PID of the agent's stdio MCP bridge (same host as the daemon). Primary
+    // liveness signal: alive ⇔ the session process is alive. Null for clients
+    // that can't report one (HTTP-MCP/remote) → fall back to the heartbeat TTL.
+    connectionPid: integer("connection_pid"),
     registeredAt: text("registered_at").notNull(),
     lastSeenAt: text("last_seen_at").notNull(),
   },

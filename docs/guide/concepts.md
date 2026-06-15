@@ -21,7 +21,7 @@ Instead, the daemon **passively senses** each registered worktree on a poll: bra
 
 ## Durable agent identity & presence
 
-An agent's identity is the natural key **(name, worktree path)**, so a reconnecting stdio MCP session re-attaches to the same row instead of duplicating. Presence is heartbeat-based; a sweeper marks agents `offline` past a TTL (agents crash without deregistering).
+An agent's identity is keyed on its **worktree path** (one agent per worktree), so a reconnecting stdio MCP session — or a SessionStart auto-register followed by a richer `register` tool call — re-attaches to the same row instead of duplicating. **Liveness is process-based:** the stdio MCP bridge is one process per session on the same host as the daemon, so an agent is "online" as long as that process is alive (`isProcessAlive(connectionPid)`) — independent of how recently it called a tool, which matches how coding agents actually work (bursts of activity with long think/edit gaps). Clients that can't report a PID (HTTP-MCP, future remote) fall back to a generous heartbeat TTL. A sweeper marks agents `offline` once they're no longer live; `discover` computes liveness directly so it's correct even between sweeps.
 
 ## Routing rules
 

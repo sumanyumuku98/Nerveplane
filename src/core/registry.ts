@@ -2,6 +2,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "../storage/db.ts";
 import { agents, capabilities, type AgentStatus } from "../storage/schema.ts";
 import { upsertRepoByPath } from "./repos.ts";
+import { isAgentLive } from "./presence.ts";
 import { newId, nowIso } from "./util.ts";
 
 export type Agent = typeof agents.$inferSelect;
@@ -18,6 +19,7 @@ export interface RegisterInput {
   cwd?: string;
   task?: string;
   metadata?: Record<string, unknown>;
+  connectionPid?: number; // PID of the stdio bridge process (primary liveness signal)
 }
 
 export interface AgentWithCaps extends Agent {
@@ -56,6 +58,9 @@ export async function registerAgent(input: RegisterInput): Promise<AgentWithCaps
         baseBranch: input.baseBranch ?? existing.baseBranch,
         cwd: input.cwd ?? existing.cwd,
         metadata: input.metadata ?? existing.metadata,
+        // Only the persistent bridge reports a PID; don't let the hook /
+        // session-start (no PID) clear an established connection.
+        connectionPid: input.connectionPid ?? existing.connectionPid,
         lastSeenAt: now,
       })
       .where(eq(agents.id, id))
@@ -76,6 +81,7 @@ export async function registerAgent(input: RegisterInput): Promise<AgentWithCaps
         baseBranch: input.baseBranch ?? null,
         cwd: input.cwd ?? null,
         metadata: input.metadata ?? null,
+        connectionPid: input.connectionPid ?? null,
         registeredAt: now,
         lastSeenAt: now,
       })
@@ -103,6 +109,22 @@ export function heartbeat(agentId: string, status?: AgentStatus): boolean {
 
 export function setStatus(agentId: string, status: AgentStatus): boolean {
   return heartbeat(agentId, status);
+}
+
+/**
+ * Record the agent's stdio-bridge PID (its primary liveness signal) and refresh
+ * presence. Called from any tool the bridge invokes; reviving the agent if it had
+ * been swept offline. No-op if the agent row is gone.
+ */
+export function noteConnection(agentId: string, pid: number): boolean {
+  const db = getDb();
+  const row = db.select().from(agents).where(eq(agents.id, agentId)).get();
+  if (!row) return false;
+  db.update(agents)
+    .set({ connectionPid: pid, lastSeenAt: nowIso(), ...(row.status === "offline" ? { status: "available" as AgentStatus } : {}) })
+    .where(eq(agents.id, agentId))
+    .run();
+  return true;
 }
 
 export function getAgent(id: string): AgentWithCaps | undefined {
@@ -133,7 +155,9 @@ export interface DiscoverFilter {
 export function discoverAgents(filter: DiscoverFilter = {}): AgentWithCaps[] {
   const db = getDb();
   let rows = db.select().from(agents).all();
-  if (!filter.includeOffline) rows = rows.filter((a) => a.status !== "offline");
+  // Compute liveness directly (process-based, with TTL fallback) so discovery is
+  // correct between presence sweeps — not dependent on the persisted status.
+  if (!filter.includeOffline) rows = rows.filter(isAgentLive);
   if (filter.repoId) rows = rows.filter((a) => a.repoId === filter.repoId);
   if (filter.serviceId) rows = rows.filter((a) => a.serviceId === filter.serviceId);
   if (filter.status) rows = rows.filter((a) => a.status === filter.status);
