@@ -16,6 +16,28 @@ function daemonCommand(): { program: string; args: string[] } {
     : { program: process.execPath, args: ["daemon"] };
 }
 
+/**
+ * PATH for the service unit. launchd/systemd run with a minimal PATH, but the
+ * npm `nerveplane` is a `#!/usr/bin/env bun` shim — without the Bun runtime dir
+ * on PATH it fails with exit 127 (`env: bun: No such file or directory`). We
+ * front-load the Bun runtime dir and the launcher's own dir, then the usual
+ * locations and the install-time PATH, so the unit works for npm/Bun installs.
+ */
+export function servicePath(program: string): string {
+  const parts = [
+    dirname(process.execPath), // the Bun (or Node) runtime dir — resolves the shebang
+    dirname(program), // the nerveplane bin dir
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+    ...(process.env.PATH ? process.env.PATH.split(":") : []),
+  ];
+  return [...new Set(parts.filter(Boolean))].join(":");
+}
+
 export interface ServiceResult {
   path: string;
   loadCmd: string;
@@ -36,6 +58,7 @@ export function installService(): ServiceResult {
   const { program, args } = daemonCommand();
   const home = join(homedir(), ".nerveplane");
   mkdirSync(home, { recursive: true });
+  const pathEnv = servicePath(program);
 
   if (platform() === "darwin") {
     const path = macPlistPath();
@@ -52,6 +75,10 @@ export function installService(): ServiceResult {
   <array>
 ${argXml}
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>${pathEnv}</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
   <dict>
@@ -77,6 +104,7 @@ Description=Nerveplane coordination daemon
 After=network.target
 
 [Service]
+Environment=PATH=${pathEnv}
 ExecStart=${[program, ...args].join(" ")}
 Restart=on-failure
 
