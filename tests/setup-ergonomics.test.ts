@@ -6,7 +6,8 @@ import { getDb } from "../src/storage/db.ts";
 import { runMigrations } from "../src/storage/migrate.ts";
 import { registerAgent, discoverAgents } from "../src/core/registry.ts";
 import { formatSessionContext } from "../src/cli/session-start.ts";
-import { serviceStatus } from "../src/install/service.ts";
+import { serviceStatus, servicePath } from "../src/install/service.ts";
+import { dirname } from "node:path";
 
 getDb(join(mkdtempSync(join(tmpdir(), "np-setup-")), "test.db"));
 runMigrations();
@@ -50,4 +51,15 @@ test("serviceStatus reports installed=false with a platform path when no unit", 
   const s = serviceStatus();
   expect(typeof s.installed).toBe("boolean");
   expect(s.path).toMatch(/nerveplane|dev\.nerveplane\.daemon/);
+});
+
+test("servicePath front-loads the runtime dir so launchd/systemd can resolve the bun shim", () => {
+  // The npm `nerveplane` is a `#!/usr/bin/env bun` shim; the service unit must
+  // carry the Bun runtime dir on PATH or it fails with exit 127 under launchd.
+  const p = servicePath("/opt/homebrew/bin/nerveplane");
+  const parts = p.split(":");
+  expect(parts[0]).toBe(dirname(process.execPath)); // bun/node runtime dir first
+  expect(parts).toContain("/opt/homebrew/bin"); // the nerveplane bin dir
+  expect(parts).toContain("/usr/bin");
+  expect(new Set(parts).size).toBe(parts.length); // de-duplicated
 });
