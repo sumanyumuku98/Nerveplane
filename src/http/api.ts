@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { AgentStatus, EventType, Severity } from "../storage/schema.ts";
-import { registerAgent, heartbeat, setStatus, discoverAgents, getAgent, agentByWorktree } from "../core/registry.ts";
+import { registerAgent, heartbeat, setStatus, discoverAgents, getAgent, agentByWorktree, noteConnection } from "../core/registry.ts";
 import { upsertRepoByPath, listRepos } from "../core/repos.ts";
 import { emitEvent } from "../core/events.ts";
 import { sendMessage, syncAgent, peek, peekMessages, broadcast } from "../core/inbox.ts";
@@ -35,6 +35,7 @@ export function buildApi(): Hono {
       cwd: b.cwd,
       task: b.task,
       metadata: b.metadata,
+      connectionPid: b.connection_pid ?? b.connectionPid,
     });
     // Optional convenience: claim an initial task if one was described.
     if (b.task) {
@@ -88,6 +89,7 @@ export function buildApi(): Hono {
   api.post("/agents/:id/peek", async (c) => {
     const body = await c.req.json().catch(() => ({}) as { min_severity?: Severity; ack?: boolean });
     const ack = body.ack ?? true;
+    heartbeat(c.req.param("id")); // the hook fires before every edit — proof of life (TTL fallback)
     const items = peek(c.req.param("id"), (body.min_severity as Severity) ?? "high", ack);
     const msgs = peekMessages(c.req.param("id"), { ack });
     return c.json({ updates: items, messages: msgs });
@@ -95,14 +97,17 @@ export function buildApi(): Hono {
 
   // --- sync (consolidated inbox pull) ---
   api.post("/agents/:id/sync", async (c) => {
-    const body = await c.req.json().catch(() => ({}) as { ack?: boolean });
-    heartbeat(c.req.param("id")); // a sync counts as presence
+    const body = await c.req.json().catch(() => ({}) as { ack?: boolean; connection_pid?: number });
+    if (body.connection_pid) noteConnection(c.req.param("id"), body.connection_pid);
+    else heartbeat(c.req.param("id")); // a sync counts as presence
     return c.json(syncAgent(c.req.param("id"), { ack: body.ack ?? true }));
   });
 
   // --- publish (event or direct message) ---
   api.post("/publish", async (c) => {
     const b = await c.req.json();
+    const producer = b.producer_agent_id ?? b.producerAgentId;
+    if (b.connection_pid && producer) noteConnection(producer, b.connection_pid);
     if (b.kind === "message") {
       const res = sendMessage({
         senderAgentId: b.producer_agent_id ?? b.producerAgentId,
@@ -139,9 +144,11 @@ export function buildApi(): Hono {
   // --- chat (direct agent-to-agent conversation) ---
   api.post("/chat/send", async (c) => {
     const b = await c.req.json();
+    const sender = b.agent_id ?? b.agentId ?? b.sender_agent_id ?? b.senderAgentId;
+    if (b.connection_pid && sender) noteConnection(sender, b.connection_pid);
     return c.json(
       sendChat({
-        senderAgentId: b.agent_id ?? b.agentId ?? b.sender_agent_id ?? b.senderAgentId,
+        senderAgentId: sender,
         recipientAgentId: b.to ?? b.recipient_agent_id ?? b.recipientAgentId,
         recipientGroup: b.recipient_group ?? b.recipientGroup,
         threadId: b.thread_id ?? b.threadId,
@@ -154,6 +161,7 @@ export function buildApi(): Hono {
 
   api.post("/chat/reply", async (c) => {
     const b = await c.req.json();
+    if (b.connection_pid && (b.agent_id ?? b.agentId)) noteConnection(b.agent_id ?? b.agentId, b.connection_pid);
     return c.json(
       replyChat({
         agentId: b.agent_id ?? b.agentId,
@@ -174,8 +182,9 @@ export function buildApi(): Hono {
 
   // Long-poll: blocks (≤50s) until a new direct message arrives — real-time chat.
   api.post("/chat/wait", async (c) => {
-    const b = await c.req.json().catch(() => ({}) as { agent_id?: string; thread_id?: string; timeout_ms?: number });
+    const b = await c.req.json().catch(() => ({}) as { agent_id?: string; thread_id?: string; timeout_ms?: number; connection_pid?: number });
     const agentId = b.agent_id ?? b.agentId;
+    if (b.connection_pid && agentId) noteConnection(agentId, b.connection_pid);
     const result = await waitForChat(agentId, { threadId: b.thread_id ?? b.threadId, timeoutMs: b.timeout_ms ?? b.timeoutMs });
     return c.json(result);
   });
@@ -185,6 +194,7 @@ export function buildApi(): Hono {
     const b = await c.req.json();
     const action = b.action ?? "claim";
     const agentId = b.agent_id ?? b.agentId;
+    if (b.connection_pid && agentId) noteConnection(agentId, b.connection_pid);
     switch (action) {
       case "claim":
         return c.json({ task: claimTask({ agentId, taskId: b.task_id ?? b.taskId, title: b.title, description: b.description, requiredCapabilities: b.required_capabilities ?? b.requiredCapabilities, repoScope: b.repo_scope ?? b.repoScope }) });

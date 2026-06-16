@@ -3,6 +3,7 @@ import journal from "../../drizzle/meta/_journal.json";
 import m0000 from "../../drizzle/0000_ancient_photon.sql" with { type: "text" };
 import m0001 from "../../drizzle/0001_adorable_raza.sql" with { type: "text" };
 import m0002 from "../../drizzle/0002_goofy_monster_badoon.sql" with { type: "text" };
+import m0003 from "../../drizzle/0003_careful_echo.sql" with { type: "text" };
 
 /**
  * Embedded migrator. The generated drizzle SQL + journal are imported as text
@@ -18,6 +19,7 @@ const MIGRATIONS: Record<string, string> = {
   "0000_ancient_photon": m0000,
   "0001_adorable_raza": m0001,
   "0002_goofy_monster_badoon": m0002,
+  "0003_careful_echo": m0003,
 };
 
 interface JournalEntry {

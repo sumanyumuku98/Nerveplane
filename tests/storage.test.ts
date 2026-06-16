@@ -27,7 +27,8 @@ test("migrations create the agents table and WAL is queryable", () => {
 test("presence sweeper marks stale agents offline but leaves fresh ones", () => {
   const stale = newId("agent");
   const fresh = newId("agent");
-  const staleSeen = isoMsAgo(120_000); // 2 min ago — past the 60s TTL
+  // No connection PID → TTL fallback liveness; 20 min ago is past the 15-min fallback TTL.
+  const staleSeen = isoMsAgo(20 * 60_000);
   db.insert(agents)
     .values({ id: stale, name: "stale", status: "in_progress", registeredAt: staleSeen, lastSeenAt: staleSeen })
     .run();

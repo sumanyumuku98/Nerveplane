@@ -1,0 +1,1 @@
+ALTER TABLE `agents` ADD `connection_pid` integer;
