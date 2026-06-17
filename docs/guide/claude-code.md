@@ -27,13 +27,14 @@ nerveplane install claude-code                # project-scoped hooks + instructi
 
 ## 2. The hooks (`nerveplane install claude-code`)
 
-This is the piece `claude mcp add` can't do. Two hooks:
+This is the piece `claude mcp add` can't do. Three hooks:
 
 - **`SessionStart`** → runs `nerveplane session-start`, which **auto-registers** the agent for the current worktree the moment a session begins — so registration never depends on the model remembering to call `register`. It also seeds the session with a short coordination summary (active peers + "call `sync`").
-- **`PreToolUse`** → routing puts a warning in an agent's inbox, but **routed ≠ read** — MCP has no reliable server→agent push. Before the agent runs `Edit`/`Write`/`MultiEdit`, this hook resolves the agent for the current worktree and injects any unread **high-severity** warnings and **direct messages** straight into its context. Both hooks always exit 0 and never block — coordination must never break the host tool.
+- **`PreToolUse`** → routing puts a warning in an agent's inbox, but **routed ≠ read** — MCP has no reliable server→agent push. Before the agent runs `Edit`/`Write`/`MultiEdit`, this hook resolves the agent for the current worktree and injects any unread **high-severity** warnings and **direct messages** straight into its context. It always exits 0 and never blocks the edit.
+- **`Stop`** → runs `nerveplane stop-check` when the agent finishes a turn. A Claude agent is **turn-based with no background loop**, so a teammate's DM would otherwise sit unread until the agent next acts. If there are unread direct messages, this hook returns a `block` decision (`{"decision":"block","reason":…}`) so the agent **handles them before going idle** — autonomous reply, no human needed. It's loop-safe (honors `stop_hook_active`) and only blocks on direct messages (not info events). This makes *concurrently-active* agents ping-pong on their own; waking a fully-parked agent needs the always-on worker model (see the [roadmap](/roadmap)).
 
 `nerveplane install claude-code` writes (under `.claude/` for the project, or `~/.claude/` with `--global`):
-- `settings.json` — the `SessionStart` + `PreToolUse` hooks.
+- `settings.json` — the `SessionStart` + `PreToolUse` + `Stop` hooks.
 - `nerveplane-instructions.md` — the agent protocol (below).
 - appends the instructions `@import` to `CLAUDE.md` (idempotent) so they load automatically — no copy-paste.
 
@@ -45,7 +46,7 @@ Flags: `--global` (user scope — install once, applies to all repos), `--with-m
 2. **Periodically and before finalizing**, call `sync`.
 3. Before changing API contracts, DB schemas, or shared types, call `publish`.
 4. Record durable decisions with `decision`.
-5. To talk to a specific agent, use `chat` (and `chat action='wait'` to block for a reply).
+5. To talk to a specific agent, use `chat` (and `chat action='wait'` to block for a reply). When you finish a turn with unread teammate messages, the `Stop` hook asks you to handle them before going idle.
 
 ## Other clients
 

@@ -95,6 +95,14 @@ export function buildApi(): Hono {
     return c.json({ updates: items, messages: msgs });
   });
 
+  // Unread direct messages only (used by the Stop hook to autonomously reply
+  // before going idle). Acks them so the same DM never re-blocks; refreshes presence.
+  api.post("/agents/:id/peek-messages", async (c) => {
+    const body = await c.req.json().catch(() => ({}) as { ack?: boolean });
+    heartbeat(c.req.param("id"));
+    return c.json({ messages: peekMessages(c.req.param("id"), { ack: body.ack ?? true }) });
+  });
+
   // --- sync (consolidated inbox pull) ---
   api.post("/agents/:id/sync", async (c) => {
     const body = await c.req.json().catch(() => ({}) as { ack?: boolean; connection_pid?: number });

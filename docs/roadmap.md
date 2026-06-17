@@ -63,6 +63,34 @@ The shipped product already delivers the full thesis: keep parallel coding agent
 
 ---
 
+## M10 — Autonomous workers / always-on agents
+
+**Goal:** true real-time autonomous agent-to-agent coordination — an incoming message wakes a recipient that has
+no human driving it. **Why it's needed:** a Claude Code agent is turn-based with no background loop, and nothing
+external can wake a parked/idle interactive session (hooks only fire on the agent's own activity). The shipped
+`chat wait` (block for a reply) and the **`Stop` hook** (handle teammate DMs before going idle) make *concurrently
+active* agents responsive, but neither can wake a fully-parked agent. A real background run-loop can.
+
+**Work**
+- **`nerveplane worker`** (`src/cli/worker.ts`) — a long-lived loop that, per iteration, **blocks on Nerveplane
+  for actionable work** (a new `/agents/:id/next` long-poll returning unread DMs / routed high-severity events /
+  task assignments, built on `waitForChat`'s in-process bus), then **invokes a headless agent turn**:
+  `claude -p "<context>" --output-format json --append-system-prompt "<role + nerveplane protocol>"` with the
+  Nerveplane MCP server configured (so the agent can `chat`/`publish` to reply), or the **Claude Agent SDK** for
+  persistent context (`--resume` / session id). Loop. An incoming DM thus triggers a real agent turn with no human.
+- **Concerns to design through:** one worker per worktree (locking via the agent row); **cost control** — only wake
+  on actionable items (DMs, high/blocking severity, task assignments), never every `info` event; context continuity
+  (Agent SDK vs `claude -p --resume`); supervision (the worker itself as a login service, reusing `installService`);
+  tool allow-list / sandboxing; stop conditions + backoff to avoid runaway loops.
+- **A2A tie-in:** this worker model + the reserved `/.well-known/agent-card.json` (see M9) is the natural place to
+  expose Google **A2A** endpoints so *external* A2A agents can message Nerveplane-managed workers. Note this is a
+  distinct goal (cross-framework interop) from "wake an idle Claude agent" — don't conflate them.
+
+**Verify:** with two `nerveplane worker`s running (no humans), agent A's `chat send` to B causes B to wake, reply,
+and the exchange to complete autonomously; an `info`-only event does **not** wake a worker (cost guard).
+
+---
+
 ## Smaller follow-ups
 
 - Branch-protection `enforce_admins` is on — there's no direct-push escape hatch for the owner; relax if that becomes inconvenient.

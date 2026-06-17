@@ -16,6 +16,7 @@ test("default install: PreToolUse + SessionStart hooks + instructions + CLAUDE.m
   const settings = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8"));
   expect(settings.hooks.PreToolUse[0].matcher).toContain("Edit");
   expect(settings.hooks.SessionStart[0].hooks[0].command).toContain("session-start");
+  expect(settings.hooks.Stop[0].hooks[0].command).toContain("stop-check");
   expect(existsSync(join(dir, ".claude", "nerveplane-instructions.md"))).toBe(true);
   expect(readFileSync(join(dir, "CLAUDE.md"), "utf8")).toContain("@.claude/nerveplane-instructions.md");
   expect(existsSync(join(dir, ".mcp.json"))).toBe(false); // MCP is registered via `claude mcp add`
