@@ -3,7 +3,7 @@ import type { AgentStatus, EventType, Severity } from "../storage/schema.ts";
 import { registerAgent, heartbeat, setStatus, discoverAgents, getAgent, agentByWorktree, noteConnection } from "../core/registry.ts";
 import { upsertRepoByPath, listRepos } from "../core/repos.ts";
 import { emitEvent } from "../core/events.ts";
-import { sendMessage, syncAgent, peek, peekMessages, broadcast } from "../core/inbox.ts";
+import { sendMessage, syncAgent, peek, peekMessages, broadcast, markMessagesRead } from "../core/inbox.ts";
 import { sendChat, replyChat, threadMessages, listThreads, allThreads, waitForChat } from "../core/chat.ts";
 import { waitForWork } from "../core/worker.ts";
 import { claimTask, updateTask, handoffTask, requestReview, openTasks } from "../core/tasks.ts";
@@ -111,6 +111,13 @@ export function buildApi(): Hono {
     const body = await c.req.json().catch(() => ({}) as { timeout_ms?: number; connection_pid?: number });
     if (body.connection_pid) noteConnection(c.req.param("id"), body.connection_pid);
     return c.json(await waitForWork(c.req.param("id"), { timeoutMs: body.timeout_ms ?? body.timeoutMs }));
+  });
+
+  // Ack specific messages by id (the worker marks the DMs it has handled so
+  // `/next` won't return them again).
+  api.post("/agents/:id/ack", async (c) => {
+    const body = await c.req.json().catch(() => ({}) as { message_ids?: string[] });
+    return c.json({ acked: markMessagesRead(body.message_ids ?? body.messageIds ?? []) });
   });
 
   // --- sync (consolidated inbox pull) ---

@@ -135,6 +135,17 @@ export function peekMessages(agentId: string, opts: { ack?: boolean; limit?: num
   return rows.map(toInboxMessage);
 }
 
+/** Mark specific messages read by id (used by the worker to ack handled DMs). */
+export function markMessagesRead(ids: string[]): number {
+  if (!ids.length) return 0;
+  return getDb()
+    .update(messages)
+    .set({ readAt: nowIso() })
+    .where(inArray(messages.id, ids))
+    .returning({ id: messages.id })
+    .all().length;
+}
+
 export interface SyncResult {
   agentId: string;
   since: string | null;

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { getDb } from "../src/storage/db.ts";
 import { runMigrations } from "../src/storage/migrate.ts";
 import { registerAgent } from "../src/core/registry.ts";
-import { sendMessage } from "../src/core/inbox.ts";
+import { sendMessage, markMessagesRead } from "../src/core/inbox.ts";
 import { emitEvent } from "../src/core/events.ts";
 import { waitForWork } from "../src/core/worker.ts";
 import { buildWorkerPrompt, buildClaudeArgs } from "../src/cli/worker.ts";
@@ -34,6 +34,14 @@ test("buildWorkerPrompt includes the agent id, message bodies, and thread ids", 
   expect(p).toContain("thr_x");
   expect(p).toContain("coordinate");
   expect(p).toContain("chat"); // tells it how to reply
+});
+
+test("buildClaudeArgs defaults grant the nerveplane MCP tools non-interactively", () => {
+  // The fix: without these defaults, headless claude blocks MCP tool calls
+  // ("pending permission") and the worker can never reply.
+  const def = buildClaudeArgs("hi", undefined, {});
+  expect(def[def.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+  expect(def[def.indexOf("--allowedTools") + 1]).toBe("mcp__nerveplane");
 });
 
 test("buildClaudeArgs sets permission mode, mcp-config, allowed tools, and resume", () => {
@@ -90,4 +98,14 @@ test("cost guard: an info event does NOT wake a worker (times out)", async () =>
   const r = await waiting;
   expect(r.timedOut).toBe(true);
   expect(r.messages.length + r.updates.length).toBe(0);
+});
+
+test("markMessagesRead acks specific DMs so waitForWork won't re-return them", async () => {
+  const { a, b } = await pair("ack");
+  const { id } = sendMessage({ senderAgentId: a.id, recipientAgentId: b.id, body: "handle me" });
+  let r = await waitForWork(b.id, { timeoutMs: 1000 });
+  expect(r.messages.some((m) => m.id === id)).toBe(true); // present before ack
+  expect(markMessagesRead([id])).toBe(1);
+  r = await waitForWork(b.id, { timeoutMs: 1000 });
+  expect(r.messages.some((m) => m.id === id)).toBe(false); // acked → gone
 });
