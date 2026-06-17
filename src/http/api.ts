@@ -5,6 +5,7 @@ import { upsertRepoByPath, listRepos } from "../core/repos.ts";
 import { emitEvent } from "../core/events.ts";
 import { sendMessage, syncAgent, peek, peekMessages, broadcast } from "../core/inbox.ts";
 import { sendChat, replyChat, threadMessages, listThreads, allThreads, waitForChat } from "../core/chat.ts";
+import { waitForWork } from "../core/worker.ts";
 import { claimTask, updateTask, handoffTask, requestReview, openTasks } from "../core/tasks.ts";
 import { recordDecision, queryDecisions, recentDecisions, setDecisionStatus } from "../core/decisions.ts";
 import { listConflicts, resolveConflict, dismissConflict } from "../core/conflicts.ts";
@@ -101,6 +102,15 @@ export function buildApi(): Hono {
     const body = await c.req.json().catch(() => ({}) as { ack?: boolean });
     heartbeat(c.req.param("id"));
     return c.json({ messages: peekMessages(c.req.param("id"), { ack: body.ack ?? true }) });
+  });
+
+  // Long-poll for actionable work (used by `nerveplane worker`): blocks until an
+  // unread DM or a high-severity routed update arrives, else times out. Read-only
+  // (the spawned agent turn acks via sync); info events never wake it (cost guard).
+  api.post("/agents/:id/next", async (c) => {
+    const body = await c.req.json().catch(() => ({}) as { timeout_ms?: number; connection_pid?: number });
+    if (body.connection_pid) noteConnection(c.req.param("id"), body.connection_pid);
+    return c.json(await waitForWork(c.req.param("id"), { timeoutMs: body.timeout_ms ?? body.timeoutMs }));
   });
 
   // --- sync (consolidated inbox pull) ---

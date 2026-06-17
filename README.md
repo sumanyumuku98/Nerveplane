@@ -41,7 +41,8 @@ None of these are git conflicts, so nothing catches them until merge — and [ne
 | 🔗 **Contract-aware cross-repo routing** | Change an OpenAPI / GraphQL / AsyncAPI / protobuf contract and consumer-repo agents (direct, transitive, and test owners) get warned about the breaking change — across repo boundaries. |
 | 📒 **Decision ledger** | Durable project decisions live separately from chat and are queryable by file, repo, service, or task. |
 | 💬 **Direct agent-to-agent chat** | A first-class `chat` tool: threaded DMs between agents with **real-time delivery** — an agent can `wait` (block) for a reply, and incoming messages are injected before a teammate's next edit. |
-| 🔌 **MCP-native** | Seven consolidated MCP tools over stdio **and** Streamable HTTP, plus a Claude Code PreToolUse hook that injects warnings *before* an agent edits. |
+| 🤖 **Autonomous workers** | `nerveplane worker` runs an agent always-on: it blocks on its inbox and wakes a headless `claude` turn to reply to teammates with **no human in the loop** — so messaging an idle agent gets an autonomous response. |
+| 🔌 **MCP-native** | Seven consolidated MCP tools over stdio **and** Streamable HTTP, plus Claude Code PreToolUse/SessionStart/Stop hooks that inject warnings, auto-register agents, and handle DMs before idling. |
 | 📊 **Live dashboard** | A Svelte dashboard (`/dashboard`) with SSE-driven agents, conflicts, timeline, chat, decisions, and human actions. |
 | 💻 **Local-first** | One user-level daemon, SQLite (WAL), no cloud dependency. Single binary, or `npm`. |
 

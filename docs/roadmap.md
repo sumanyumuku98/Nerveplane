@@ -63,7 +63,7 @@ The shipped product already delivers the full thesis: keep parallel coding agent
 
 ---
 
-## M10 — Autonomous workers / always-on agents
+## M10 — Autonomous workers / always-on agents — ✅ MVP shipped
 
 **Goal:** true real-time autonomous agent-to-agent coordination — an incoming message wakes a recipient that has
 no human driving it. **Why it's needed:** a Claude Code agent is turn-based with no background loop, and nothing
@@ -71,20 +71,21 @@ external can wake a parked/idle interactive session (hooks only fire on the agen
 `chat wait` (block for a reply) and the **`Stop` hook** (handle teammate DMs before going idle) make *concurrently
 active* agents responsive, but neither can wake a fully-parked agent. A real background run-loop can.
 
-**Work**
-- **`nerveplane worker`** (`src/cli/worker.ts`) — a long-lived loop that, per iteration, **blocks on Nerveplane
-  for actionable work** (a new `/agents/:id/next` long-poll returning unread DMs / routed high-severity events /
-  task assignments, built on `waitForChat`'s in-process bus), then **invokes a headless agent turn**:
-  `claude -p "<context>" --output-format json --append-system-prompt "<role + nerveplane protocol>"` with the
-  Nerveplane MCP server configured (so the agent can `chat`/`publish` to reply), or the **Claude Agent SDK** for
-  persistent context (`--resume` / session id). Loop. An incoming DM thus triggers a real agent turn with no human.
-- **Concerns to design through:** one worker per worktree (locking via the agent row); **cost control** — only wake
-  on actionable items (DMs, high/blocking severity, task assignments), never every `info` event; context continuity
-  (Agent SDK vs `claude -p --resume`); supervision (the worker itself as a login service, reusing `installService`);
-  tool allow-list / sandboxing; stop conditions + backoff to avoid runaway loops.
+**Shipped (MVP):** `nerveplane worker` (`src/cli/worker.ts`) — a long-lived loop that **blocks on
+`POST /agents/:id/next`** (`src/core/worker.ts` `waitForWork`, built on the in-process bus; wakes only on unread
+DMs / high-severity routed updates — `info` events never wake it, the cost guard), then spawns a **headless
+`claude -p "<prompt>" --output-format json --permission-mode … --mcp-config <nerveplane> [--resume <sid>]`** turn so
+the agent reads context (`sync`) and replies via `chat`. Session id persisted (`~/.nerveplane/workers/<agent>.json`)
+and `--resume`d for continuity. One worker per worktree (the agent row). See the
+[Autonomous Workers guide](/guide/autonomous-workers).
+
+**Follow-ups (future)**
+- **Supervision:** run a worker as a login service (reuse `installService`); a `worker` mode of the daemon.
+- **Fleet/management:** start/stop/list workers; per-worker model + tool policy; backoff/cost dashboards.
+- **Context strategy:** periodic compaction vs `--fork-session`; Agent SDK option for richer control.
 - **A2A tie-in:** this worker model + the reserved `/.well-known/agent-card.json` (see M9) is the natural place to
-  expose Google **A2A** endpoints so *external* A2A agents can message Nerveplane-managed workers. Note this is a
-  distinct goal (cross-framework interop) from "wake an idle Claude agent" — don't conflate them.
+  expose Google **A2A** endpoints so *external* A2A agents can message Nerveplane-managed workers. Distinct goal
+  (cross-framework interop) from "wake an idle Claude agent" — don't conflate them.
 
 **Verify:** with two `nerveplane worker`s running (no humans), agent A's `chat send` to B causes B to wake, reply,
 and the exchange to complete autonomously; an `info`-only event does **not** wake a worker (cost guard).

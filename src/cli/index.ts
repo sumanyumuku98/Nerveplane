@@ -5,6 +5,7 @@ import { runStdioMcp } from "../mcp/stdio.ts";
 import { runHook } from "./hook.ts";
 import { runSessionStart } from "./session-start.ts";
 import { runStopCheck } from "./stop-check.ts";
+import { runWorker } from "./worker.ts";
 import { runEvalCli } from "../eval/run.ts";
 import { installClaudeCode } from "../install/claude-code.ts";
 import { installService, serviceStatus } from "../install/service.ts";
@@ -38,6 +39,10 @@ Project:
   service uninstall      Remove the daemon service unit
   services               List services and contracts
   dashboard              Open the live web dashboard in your browser
+  worker                 Run this worktree's agent as an always-on autonomous
+                         process — wakes a headless claude turn to reply to teammate
+                         messages (flags: --name, --model, --permission-mode,
+                         --allowed-tools, --poll-ms, --once, --print)
   eval                   Run the deterministic conflict-detection eval
 
 Integration (usually invoked by tools, not humans):
@@ -331,6 +336,23 @@ export async function runCli(argv: string[]): Promise<number> {
       spawn(opener, [url], { detached: true, stdio: "ignore" }).unref();
       process.stdout.write(`nerveplane: dashboard at ${url}\n`);
       return 0;
+    }
+
+    case "worker": {
+      const flag = (name: string): string | undefined => {
+        const i = rest.indexOf(name);
+        return i >= 0 ? rest[i + 1] : undefined;
+      };
+      return runWorker({
+        name: flag("--name"),
+        model: flag("--model"),
+        permissionMode: flag("--permission-mode"),
+        allowedTools: flag("--allowed-tools"),
+        mcpConfig: flag("--mcp-config"),
+        pollMs: flag("--poll-ms") ? Number(flag("--poll-ms")) : undefined,
+        once: rest.includes("--once"),
+        print: rest.includes("--print"),
+      });
     }
 
     case "eval":
