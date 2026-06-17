@@ -1,0 +1,1 @@
+ALTER TABLE `decisions` ADD `owner_verified` integer DEFAULT false NOT NULL;

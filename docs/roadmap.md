@@ -51,6 +51,8 @@ The shipped product already delivers the full thesis: keep parallel coding agent
 
 **Goal:** beyond one laptop — remote agents, real identity, durable team storage. The biggest, most speculative phase; only worth it once teams use it.
 
+> **Partially shipped (local single-user slice):** owner-verified directives (a token-based local stand-in for "signed identities" — `nerveplane owner init` / `authorize` → `owner_verified` decisions; `src/security/owner.ts`) and **secret scanning** of outbound publish/chat (`src/security/scan.ts`, `NERVEPLANE_SCAN`). See the [Security guide](/guide/security). Still future: full per-agent Ed25519 PKI, A2A, Postgres/RBAC/remote-auth, hash-chained audit, retention/pruning.
+
 **Work**
 - **A2A endpoint** — `src/a2a/`: serve `/.well-known/agent-card.json` + the A2A JSON-RPC surface (`message/send`, `message/stream` SSE, `tasks/get`, `tasks/cancel`) mapping onto the existing agent/task/event model (the task model was deliberately kept A2A-shaped). Consider `@a2a-js/sdk` if it integrates cleanly with Hono/Bun; else a thin hand-rolled handler.
 - **Signed identities** (spec §22 V1) — `src/security/identity.ts`: per-agent Ed25519 keypair via Web Crypto (no dep) generated at register; sign events/messages; daemon verifies; public key in agent `metadata`. Per-agent capabilities/permissions; human-approval gate for `blocking`-severity events before they route.

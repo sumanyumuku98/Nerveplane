@@ -26,6 +26,7 @@ export default defineConfig({
             { text: "Concepts", link: "/guide/concepts" },
             { text: "Claude Code Integration", link: "/guide/claude-code" },
             { text: "Autonomous Workers", link: "/guide/autonomous-workers" },
+            { text: "Security", link: "/guide/security" },
           ],
         },
       ],
