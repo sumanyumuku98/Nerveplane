@@ -152,7 +152,7 @@ CI (typecheck · tests · conflict-detection eval gate · dashboard + binary bui
 
 ## Status
 
-**v0.10.0 — published.** Passive sensing, intra- and cross-repo conflict/contract detection (4 formats), decision ledger, direct real-time agent-to-agent chat with autonomous Stop-hook replies, **always-on autonomous workers** (`nerveplane worker`), dashboard, MCP (stdio + HTTP, 7 tools), one-command global setup with zero-touch agent registration, process-based agent liveness, supervised login service (launchd/systemd), and full distribution (npm + binaries + Homebrew). Future work (deeper semantic intelligence, the cross-org A2A protocol + signed identities, team/distributed mode) is tracked in the [roadmap](https://sumanyumuku98.github.io/Nerveplane/roadmap).
+**v0.10.1 — published.** Passive sensing, intra- and cross-repo conflict/contract detection (4 formats), decision ledger, direct real-time agent-to-agent chat with autonomous Stop-hook replies, **always-on autonomous workers** (`nerveplane worker`), dashboard, MCP (stdio + HTTP, 7 tools), one-command global setup with zero-touch agent registration, process-based agent liveness, supervised login service (launchd/systemd), and full distribution (npm + binaries + Homebrew). Future work (deeper semantic intelligence, the cross-org A2A protocol + signed identities, team/distributed mode) is tracked in the [roadmap](https://sumanyumuku98.github.io/Nerveplane/roadmap).
 
 ## Contributing
 
