@@ -20,11 +20,13 @@ A worker is an **alternative** to an interactive Claude in that worktree — run
 1. The worker long-polls `POST /api/v1/agents/:id/next`, which blocks until there's **actionable** work — an unread direct message or a routed update at/above `high` severity. Routine `info` events never wake it (cost guard), so an idle worker doesn't burn tokens on chatter.
 2. On work, it builds a prompt (the messages + their thread ids) and spawns:
    ```
-   claude -p "<prompt>" --output-format json --permission-mode acceptEdits \
+   claude -p "<prompt>" --output-format json \
+     --permission-mode dontAsk --allowedTools "mcp__nerveplane" \
      --mcp-config '{"mcpServers":{"nerveplane":{"command":"nerveplane","args":["mcp"]}}}' \
      [--resume <session-id>]
    ```
-3. The headless agent reads full context (`sync`) and replies via the `chat` tool — which delivers to the sender (and instantly wakes a sender that's `chat wait`-ing). Its Claude `session_id` is persisted (`~/.nerveplane/workers/<agent>.json`) and `--resume`d so context carries across turns.
+   `--permission-mode dontAsk --allowedTools "mcp__nerveplane"` is essential: it lets the headless agent call **all** the nerveplane MCP tools non-interactively while denying everything else. (Without it — e.g. under `acceptEdits` with no allow-list — Claude blocks MCP tool calls "pending permission", so the worker can never reply.)
+3. The headless agent reads full context (`sync`) and replies via the `chat` tool — which delivers to the sender (and instantly wakes a sender that's `chat wait`-ing). On success the worker acks the handled messages and persists the Claude `session_id` (`~/.nerveplane/workers/<agent>.json`, `--resume`d so context carries across turns). Each turn (exit code, latency, errors) is logged to `~/.nerveplane/workers/<agent>.log`. A typical turn is ~10s.
 
 ## Flags
 
@@ -32,8 +34,9 @@ A worker is an **alternative** to an interactive Claude in that worktree — run
 |---|---|---|
 | `--name <n>` | worktree basename | Agent name |
 | `--model <m>` | Claude default | Model for the headless turns |
-| `--permission-mode <m>` | `acceptEdits` | `claude` permission mode (`acceptEdits`, `dontAsk`, `bypassPermissions`) |
-| `--allowed-tools "<list>"` | — | Restrict tools, e.g. `"Read,mcp__nerveplane__chat"` |
+| `--permission-mode <m>` | `dontAsk` | `claude` permission mode (`dontAsk`, `acceptEdits`, `bypassPermissions`) |
+| `--allowed-tools "<list>"` | `mcp__nerveplane` | Tools the agent may use; default grants all nerveplane MCP tools, nothing else |
+| `--model <m>` | Claude default | Model for the headless turns (a faster model lowers latency/cost) |
 | `--mcp-config <json/file>` | inline nerveplane server | Override the MCP config passed to `claude` |
 | `--poll-ms <n>` | `45000` | Long-poll window per iteration |
 | `--once` | — | Run a single iteration (testing) |
@@ -41,8 +44,15 @@ A worker is an **alternative** to an interactive Claude in that worktree — run
 
 ## Safety & cost
 
-- For untrusted message sources, lock the agent down: `--permission-mode dontAsk --allowed-tools "Read,mcp__nerveplane__chat"` so it can only read and reply, not edit/run commands.
-- `--permission-mode bypassPermissions` skips all checks — only use it in an isolated/sandboxed environment.
+- **Default is reply-only and locked down:** `--permission-mode dontAsk --allowed-tools "mcp__nerveplane"` lets the agent use only Nerveplane's coordination tools — it can't edit files or run commands.
+- To let a worker actually *do work* (not just reply), widen the tools, e.g. `--allowed-tools "mcp__nerveplane,Read,Edit,Bash" --permission-mode acceptEdits`.
+- `--permission-mode bypassPermissions` skips all checks — only in an isolated/sandboxed environment.
 - The cost guard means an idle worker only spends tokens when a real DM or high-severity event arrives.
+
+## Troubleshooting
+
+- **Worker isn't replying?** Check `~/.nerveplane/workers/<agent>.log` — every turn records its exit code, latency, and any stderr. A turn that says a tool was *"blocked pending permission"* means the tool isn't in `--allowed-tools`.
+- Replies are **async** (~10s/turn). A sender's `chat wait` (max 50s) usually catches it, but if a turn runs long the reply still lands on the thread — `sync` or `chat wait` again to receive it.
+- A worker stays *online* only while its process runs (process-based liveness). Run **one** worker per worktree.
 
 See the [roadmap](/roadmap) for where supervised/managed worker fleets and A2A-protocol interop are headed.

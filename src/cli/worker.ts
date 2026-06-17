@@ -1,5 +1,5 @@
 import { basename, join } from "node:path";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, appendFileSync } from "node:fs";
 import { api, ensureDaemon } from "../daemon/client.ts";
 import { NERVEPLANE_HOME } from "../config.ts";
 import type { WorkResult } from "../core/worker.ts";
@@ -16,8 +16,8 @@ export interface WorkerOptions {
   cwd?: string;
   name?: string;
   model?: string;
-  permissionMode?: string; // claude --permission-mode (default acceptEdits)
-  allowedTools?: string; // claude --allowedTools
+  permissionMode?: string; // claude --permission-mode (default dontAsk)
+  allowedTools?: string; // claude --allowedTools (default "mcp__nerveplane" — all nerveplane tools)
   mcpConfig?: string; // claude --mcp-config (defaults to an inline nerveplane stdio server)
   pollMs?: number;
   once?: boolean; // single iteration (testing)
@@ -29,10 +29,27 @@ function defaultMcpConfig(): string {
   return JSON.stringify({ mcpServers: { nerveplane: { command: "nerveplane", args: ["mcp"] } } });
 }
 
-/** Build the headless `claude` argv (pure — unit-tested). */
+/**
+ * Build the headless `claude` argv (pure — unit-tested). Defaults to
+ * `--permission-mode dontAsk --allowedTools "mcp__nerveplane"`: under `dontAsk`
+ * the agent can use ONLY the granted tools non-interactively (everything else is
+ * auto-denied), and `mcp__nerveplane` grants all of Nerveplane's MCP tools so the
+ * agent can actually `chat`/`sync`/`publish` to reply. (With the previous default
+ * — `acceptEdits` and no allow-list — MCP tool calls were blocked "pending
+ * permission", so the worker could never reply.) Widen with `--allowed-tools` /
+ * `--permission-mode` if you want the worker to edit code or run commands too.
+ */
 export function buildClaudeArgs(prompt: string, sessionId: string | undefined, opts: WorkerOptions): string[] {
-  const args = ["-p", prompt, "--output-format", "json", "--permission-mode", opts.permissionMode ?? "acceptEdits"];
-  if (opts.allowedTools) args.push("--allowedTools", opts.allowedTools);
+  const args = [
+    "-p",
+    prompt,
+    "--output-format",
+    "json",
+    "--permission-mode",
+    opts.permissionMode ?? "dontAsk",
+    "--allowedTools",
+    opts.allowedTools ?? "mcp__nerveplane",
+  ];
   if (opts.model) args.push("--model", opts.model);
   args.push("--mcp-config", opts.mcpConfig ?? defaultMcpConfig());
   if (sessionId) args.push("--resume", sessionId);
@@ -57,23 +74,28 @@ export function buildWorkerPrompt(work: WorkResult, agentId: string): string {
   return lines.join("\n");
 }
 
-export type TurnRunner = (
-  prompt: string,
-  ctx: { cwd: string; sessionId?: string; opts: WorkerOptions },
-) => Promise<{ sessionId?: string; result?: string }>;
+export interface TurnResult {
+  ok: boolean;
+  sessionId?: string;
+  result?: string;
+  exitCode?: number;
+  stderr?: string;
+}
+export type TurnRunner = (prompt: string, ctx: { cwd: string; sessionId?: string; opts: WorkerOptions }) => Promise<TurnResult>;
 
-/** Default runner: spawn a real headless `claude -p` turn. */
+/** Default runner: spawn a real headless `claude -p` turn, capturing exit + stderr. */
 const spawnRunner: TurnRunner = async (prompt, { cwd, sessionId, opts }) => {
   const args = buildClaudeArgs(prompt, sessionId, opts);
-  const proc = Bun.spawn(["claude", ...args], { cwd, stdout: "pipe", stderr: "ignore" });
-  const out = await new Response(proc.stdout).text();
-  await proc.exited;
+  const proc = Bun.spawn(["claude", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  const exitCode = await proc.exited;
+  let parsed: { session_id?: string; result?: string } = {};
   try {
-    const j = JSON.parse(out) as { session_id?: string; result?: string };
-    return { sessionId: j.session_id, result: j.result };
+    parsed = JSON.parse(out) as { session_id?: string; result?: string };
   } catch {
-    return {};
+    /* non-JSON output → treated as failure below */
   }
+  return { ok: exitCode === 0 && typeof parsed.result === "string", sessionId: parsed.session_id, result: parsed.result, exitCode, stderr: err };
 };
 
 export async function runWorker(opts: WorkerOptions = {}, runner: TurnRunner = spawnRunner): Promise<number> {
@@ -107,45 +129,85 @@ export async function runWorker(opts: WorkerOptions = {}, runner: TurnRunner = s
 
   const sessDir = join(NERVEPLANE_HOME, "workers");
   const sessFile = join(sessDir, `${agentId}.json`);
+  const logFile = join(sessDir, `${agentId}.log`);
   mkdirSync(sessDir, { recursive: true });
+  const log = (line: string) => {
+    try {
+      appendFileSync(logFile, `[${new Date().toISOString()}] ${line}\n`);
+    } catch {
+      /* logging must never break the loop */
+    }
+  };
+  process.stdout.write(`  log: ${logFile}\n`);
   let sessionId: string | undefined = existsSync(sessFile)
     ? (JSON.parse(readFileSync(sessFile, "utf8")).sessionId as string | undefined)
     : undefined;
 
+  // Items already handed to a turn — so a turn that doesn't ack (or fails) can't
+  // make /next re-return the same work in a tight, paid loop.
+  const seen = new Set<string>();
   let backoff = 1_000;
   for (;;) {
     let work: WorkResult;
     try {
-      const res = await api<WorkResult>("POST", `/api/v1/agents/${agentId}/next`, {
-        timeout_ms: opts.pollMs ?? 45_000,
-        connection_pid: process.pid,
-      });
+      const res = await api<WorkResult>("POST", `/api/v1/agents/${agentId}/next`, { timeout_ms: opts.pollMs ?? 45_000, connection_pid: process.pid });
       work = res.data ?? { messages: [], updates: [], timedOut: true };
+      backoff = 1_000;
     } catch {
       await Bun.sleep(backoff);
       backoff = Math.min(backoff * 2, 30_000);
       continue;
     }
-    backoff = 1_000;
 
-    if (work.timedOut || (work.messages.length === 0 && work.updates.length === 0)) {
+    const newMsgs = work.messages.filter((m) => !seen.has(m.id));
+    const newUpdates = work.updates.filter((u) => !seen.has(u.eventId));
+    if (newMsgs.length === 0 && newUpdates.length === 0) {
       if (opts.once) return 0;
+      if (!work.timedOut) await Bun.sleep(2_000); // already-seen items pending → don't busy-loop
       continue;
     }
+    for (const m of newMsgs) seen.add(m.id);
+    for (const u of newUpdates) seen.add(u.eventId);
 
-    process.stdout.write(`  ↳ ${work.messages.length} message(s) / ${work.updates.length} update(s) — running a turn…\n`);
+    process.stdout.write(`  ↳ ${newMsgs.length} message(s) / ${newUpdates.length} update(s) — running a turn…\n`);
+    log(`turn start: ${newMsgs.length} msg, ${newUpdates.length} update`);
+    const t0 = Date.now();
+    let r: TurnResult;
     try {
-      const r = await runner(buildWorkerPrompt(work, agentId), { cwd, sessionId, opts: o });
+      r = await runner(buildWorkerPrompt({ messages: newMsgs, updates: newUpdates, timedOut: false }, agentId), { cwd, sessionId, opts: o });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      process.stderr.write(`  ↳ turn could not start: ${msg}\n`);
+      log(`turn ERROR (spawn): ${msg}`);
+      backoff = Math.min(backoff * 2, 30_000);
+      await Bun.sleep(backoff);
+      if (opts.once) return 1;
+      continue;
+    }
+    const ms = Date.now() - t0;
+
+    if (r.ok) {
       if (r.sessionId) {
         sessionId = r.sessionId;
         writeFileSync(sessFile, JSON.stringify({ sessionId }));
       }
-      process.stdout.write("  ↳ done.\n");
-    } catch (e) {
-      process.stderr.write(`  ↳ turn failed: ${e instanceof Error ? e.message : String(e)}\n`);
-      await Bun.sleep(backoff);
+      if (newMsgs.length) {
+        // Ack the DMs we handled so /next won't return them again.
+        try {
+          await api("POST", `/api/v1/agents/${agentId}/ack`, { message_ids: newMsgs.map((m) => m.id) });
+        } catch {
+          /* best-effort; the in-memory `seen` set still prevents reprocessing */
+        }
+      }
+      process.stdout.write(`  ↳ done (${ms}ms).\n`);
+      log(`turn ok (${ms}ms): ${(r.result ?? "").slice(0, 300)}`);
+      backoff = 1_000;
+    } else {
+      process.stderr.write(`  ↳ turn failed (exit ${r.exitCode}) — see ${logFile}\n`);
+      log(`turn FAILED (exit ${r.exitCode}, ${ms}ms) stderr: ${(r.stderr ?? "").slice(0, 600)} | out: ${(r.result ?? "").slice(0, 200)}`);
       backoff = Math.min(backoff * 2, 30_000);
+      await Bun.sleep(backoff);
     }
-    if (opts.once) return 0;
+    if (opts.once) return r.ok ? 0 : 1;
   }
 }
