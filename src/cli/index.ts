@@ -6,6 +6,7 @@ import { runHook } from "./hook.ts";
 import { runSessionStart } from "./session-start.ts";
 import { runStopCheck } from "./stop-check.ts";
 import { runWorker } from "./worker.ts";
+import { ensureOwnerToken, ownerToken } from "../security/owner.ts";
 import { runEvalCli } from "../eval/run.ts";
 import { installClaudeCode } from "../install/claude-code.ts";
 import { installService, serviceStatus } from "../install/service.ts";
@@ -29,6 +30,8 @@ Setup:
                          (register the MCP server: claude mcp add --scope user nerveplane -- nerveplane mcp)
   init                   Register the current repo (optional — the agent 'register'
                          tool does this automatically; prefer 'nerveplane setup')
+  owner init             Create the owner secret (enables owner-verified directives)
+  authorize "<title>"    Record an owner-VERIFIED decision agents can trust (-m "<desc>")
 
 Project:
   agents                 List active agents
@@ -135,6 +138,51 @@ export async function runCli(argv: string[]): Promise<number> {
 
     case "stop-check":
       return runStopCheck();
+
+    case "owner": {
+      if (rest[0] !== "init") {
+        process.stderr.write("usage: nerveplane owner init\n");
+        return 1;
+      }
+      const { token, path, created } = ensureOwnerToken();
+      process.stdout.write(
+        created
+          ? `nerveplane: owner secret created at ${path} (mode 0600)\n  token: ${token}\n  The daemon reads this file to verify owner directives. Restart the daemon so it picks it up:\n    nerveplane stop   # then any command respawns it\n  Use 'nerveplane authorize \"...\"' to record decisions agents will trust.\n`
+          : `nerveplane: owner secret already configured (${path}).\n`,
+      );
+      return 0;
+    }
+
+    case "authorize": {
+      const title = rest.find((a) => !a.startsWith("-"));
+      if (!title) {
+        process.stderr.write('usage: nerveplane authorize "<title>" [-m "<description>"]\n');
+        return 1;
+      }
+      const mi = rest.indexOf("-m");
+      const description = mi >= 0 ? rest[mi + 1] : undefined;
+      const token = ownerToken();
+      if (!token) {
+        process.stderr.write("nerveplane: no owner secret — run 'nerveplane owner init' first\n");
+        return 1;
+      }
+      await ensureDaemon();
+      const res = await api<{ decision: { id: string; ownerVerified: boolean } }>("POST", "/api/v1/decisions", {
+        title,
+        description,
+        created_by: "owner",
+        owner_token: token,
+      });
+      const d = res.data?.decision;
+      if (!res.ok || !d?.ownerVerified) {
+        process.stderr.write(
+          `nerveplane: recorded but NOT owner-verified — does the daemon have the same owner secret? (restart it after 'owner init')\n`,
+        );
+        return 1;
+      }
+      process.stdout.write(`nerveplane: recorded owner-verified decision ${d.id}\n  "${title}"\n  Agents/workers can now trust this as a genuine owner directive.\n`);
+      return 0;
+    }
 
     case "setup": {
       const flags = rest;

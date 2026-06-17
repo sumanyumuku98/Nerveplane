@@ -16,6 +16,9 @@ export const LOG_PATH = join(NERVEPLANE_HOME, "daemon.log");
 export const HOST = "127.0.0.1";
 export const DEFAULT_PORT = Number(process.env.NERVEPLANE_PORT ?? 7734);
 
+/** Sensitive-content scanning of outbound messages/events: block | warn | off. */
+export const SCAN_MODE = ((m) => (m === "warn" || m === "off" ? m : "block"))(process.env.NERVEPLANE_SCAN);
+
 /**
  * Presence. The primary liveness signal is the agent's stdio-bridge process
  * (see core/presence.isAgentLive). The heartbeat TTL is the *fallback* for

@@ -14,6 +14,7 @@ export interface RecordDecisionInput {
   supersedes?: string;
   relatedArtifacts?: Artifact[];
   repoScope?: string[];
+  ownerVerified?: boolean;
 }
 
 /**
@@ -39,6 +40,7 @@ export function recordDecision(input: RecordDecisionInput): Decision {
     createdBy: input.createdBy ?? null,
     supersedes: input.supersedes ?? null,
     relatedArtifacts: input.relatedArtifacts ?? null,
+    ownerVerified: input.ownerVerified ?? false,
     createdAt: now,
   };
   db.insert(decisions).values(row).run();

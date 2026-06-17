@@ -196,6 +196,9 @@ export const decisions = sqliteTable("decisions", {
   createdBy: text("created_by"),
   supersedes: text("supersedes"),
   relatedArtifacts: text("related_artifacts_json", { mode: "json" }).$type<Artifact[]>(),
+  // True when recorded through the owner channel (CLI presenting the owner token).
+  // Agents/workers should trust an authorization only when this is set.
+  ownerVerified: integer("owner_verified", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
 });
 

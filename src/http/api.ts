@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { AgentStatus, EventType, Severity } from "../storage/schema.ts";
 import { registerAgent, heartbeat, setStatus, discoverAgents, getAgent, agentByWorktree, noteConnection } from "../core/registry.ts";
 import { upsertRepoByPath, listRepos } from "../core/repos.ts";
@@ -12,6 +12,9 @@ import { listConflicts, resolveConflict, dismissConflict } from "../core/conflic
 import { scanServiceGraph, listServices, listContracts, invalidateGraphCache } from "../services/contracts.ts";
 import { buildJoinPacket } from "../core/join.ts";
 import { recentEvents } from "../core/events.ts";
+import { isOwnerToken } from "../security/owner.ts";
+import { scanSecrets, hasHigh } from "../security/scan.ts";
+import { SCAN_MODE } from "../config.ts";
 
 /**
  * Granular local REST API (mounted at /api/v1). It is the single in-process
@@ -20,6 +23,19 @@ import { recentEvents } from "../core/events.ts";
  */
 export function buildApi(): Hono {
   const api = new Hono();
+
+  // Sensitive-content guard for outbound agent text. Returns a 400 Response to
+  // return early when blocked, else null (and warns on lower-severity findings).
+  const scanGuard = (c: Context, text: string | undefined | null) => {
+    if (SCAN_MODE === "off") return null;
+    const findings = scanSecrets(text);
+    if (!findings.length) return null;
+    if (SCAN_MODE === "block" && hasHigh(findings)) {
+      return c.json({ error: "blocked by sensitive-content scan", findings }, 400);
+    }
+    console.warn("nerveplane: sensitive content flagged:", findings.map((f) => f.kind).join(", "));
+    return null;
+  };
 
   // --- registration & presence ---
   api.post("/register", async (c) => {
@@ -133,6 +149,8 @@ export function buildApi(): Hono {
     const b = await c.req.json();
     const producer = b.producer_agent_id ?? b.producerAgentId;
     if (b.connection_pid && producer) noteConnection(producer, b.connection_pid);
+    const blocked = scanGuard(c, [b.summary, b.body].filter(Boolean).join("\n"));
+    if (blocked) return blocked;
     if (b.kind === "message") {
       const res = sendMessage({
         senderAgentId: b.producer_agent_id ?? b.producerAgentId,
@@ -171,6 +189,8 @@ export function buildApi(): Hono {
     const b = await c.req.json();
     const sender = b.agent_id ?? b.agentId ?? b.sender_agent_id ?? b.senderAgentId;
     if (b.connection_pid && sender) noteConnection(sender, b.connection_pid);
+    const blocked = scanGuard(c, b.body);
+    if (blocked) return blocked;
     return c.json(
       sendChat({
         senderAgentId: sender,
@@ -187,6 +207,8 @@ export function buildApi(): Hono {
   api.post("/chat/reply", async (c) => {
     const b = await c.req.json();
     if (b.connection_pid && (b.agent_id ?? b.agentId)) noteConnection(b.agent_id ?? b.agentId, b.connection_pid);
+    const blocked = scanGuard(c, b.body);
+    if (blocked) return blocked;
     return c.json(
       replyChat({
         agentId: b.agent_id ?? b.agentId,
@@ -242,6 +264,9 @@ export function buildApi(): Hono {
     if ((b.action ?? "record") === "query") {
       return c.json({ decisions: queryDecisions({ repoId: b.repo_id ?? b.repoId, file: b.file, serviceId: b.service_id ?? b.serviceId, taskId: b.task_id ?? b.taskId, status: b.status }) });
     }
+    // Owner-verified iff the request carries the owner secret (body or header) —
+    // CLI `authorize` does; agents calling the MCP tool never have it.
+    const ownerVerified = isOwnerToken(b.owner_token ?? c.req.header("x-nerveplane-owner-token"));
     return c.json({
       decision: recordDecision({
         title: b.title,
@@ -250,6 +275,7 @@ export function buildApi(): Hono {
         createdBy: b.created_by ?? b.createdBy,
         supersedes: b.supersedes,
         repoScope: b.repo_scope ?? b.repoScope,
+        ownerVerified,
       }),
     });
   });
