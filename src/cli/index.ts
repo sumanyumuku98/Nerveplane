@@ -4,6 +4,7 @@ import { readLiveLock } from "../daemon/lock.ts";
 import { runStdioMcp } from "../mcp/stdio.ts";
 import { runHook } from "./hook.ts";
 import { runSessionStart } from "./session-start.ts";
+import { runStopCheck } from "./stop-check.ts";
 import { runEvalCli } from "../eval/run.ts";
 import { installClaudeCode } from "../install/claude-code.ts";
 import { installService, serviceStatus } from "../install/service.ts";
@@ -43,6 +44,7 @@ Integration (usually invoked by tools, not humans):
   mcp                    Run the stdio MCP server (spawned by Claude Code/Cursor)
   hook                   PreToolUse hook entrypoint (reads JSON on stdin)
   session-start          SessionStart hook entrypoint — auto-registers the agent
+  stop-check             Stop hook entrypoint — auto-replies to teammate DMs before idling
 
   --help, -h             Show this help
   --version, -v          Show version
@@ -125,6 +127,9 @@ export async function runCli(argv: string[]): Promise<number> {
 
     case "session-start":
       return runSessionStart();
+
+    case "stop-check":
+      return runStopCheck();
 
     case "setup": {
       const flags = rest;

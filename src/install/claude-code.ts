@@ -37,7 +37,7 @@ You are working alongside other autonomous coding agents. Nerveplane keeps you a
 
 5. To coordinate directly with a specific agent, use \`chat\` (find them with \`discover\`): \`action='send'\` to DM, \`'reply'\` to continue a thread. When you need their answer before proceeding, call \`chat\` with \`action='wait'\` to block until they reply.
 
-High-priority warnings and new direct messages are also injected automatically before you edit files.`;
+High-priority warnings and new direct messages are injected automatically before you edit files, and when you finish a turn with unread teammate messages you'll be asked to handle them (reply via \`chat\`) before going idle.`;
 
 export interface InstallOptions {
   withMcp?: boolean; // also write a project .mcp.json (fallback when the `claude` CLI isn't used)
@@ -63,7 +63,8 @@ function hasProjectMcpEntry(projectDir: string): boolean {
 /**
  * Wires the parts of Claude Code that the native `claude mcp add` can't do: the
  * PreToolUse hook (last-mile warning injection), the SessionStart hook (zero-touch
- * agent registration), and the agent instructions (imported into CLAUDE.md).
+ * agent registration), the Stop hook (autonomously handle teammate DMs before
+ * idling), and the agent instructions (imported into CLAUDE.md).
  *
  * Default = project scope (`<repo>/.claude`). Pass `global` to install into
  * `~/.claude` (user scope) once-per-machine so you don't repeat this per repo.
@@ -91,12 +92,14 @@ export function installClaudeCode(projectDir: string, opts: InstallOptions = {})
     return [inv.command, ...inv.args].map((s) => (s.includes(" ") ? `"${s}"` : s)).join(" ");
   };
 
-  // 1) Hooks: PreToolUse (warnings/DMs before edits) + SessionStart (auto-register).
+  // 1) Hooks: PreToolUse (warnings/DMs before edits), SessionStart (auto-register),
+  //    Stop (autonomously handle teammate DMs before the agent goes idle).
   const settingsPath = join(claudeDir, "settings.json");
   const settings = readJson(settingsPath);
   const hooks = (settings.hooks as Record<string, unknown>) ?? {};
   hooks.PreToolUse = [{ matcher: "Edit|Write|MultiEdit", hooks: [{ type: "command", command: cmdLine("hook") }] }];
   hooks.SessionStart = [{ hooks: [{ type: "command", command: cmdLine("session-start") }] }];
+  hooks.Stop = [{ hooks: [{ type: "command", command: cmdLine("stop-check") }] }];
   settings.hooks = hooks;
   write(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 
