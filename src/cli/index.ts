@@ -31,7 +31,8 @@ Setup:
   init                   Register the current repo (optional — the agent 'register'
                          tool does this automatically; prefer 'nerveplane setup')
   owner init             Create the owner secret (enables owner-verified directives)
-  authorize "<title>"    Record an owner-VERIFIED decision agents can trust (-m "<desc>")
+  authorize "<title>"    Record an owner-VERIFIED decision agents can trust
+                         (-m "<desc>"; scoped to the current repo by default; --repo <id>, --all)
 
 Project:
   agents                 List active agents
@@ -154,24 +155,44 @@ export async function runCli(argv: string[]): Promise<number> {
     }
 
     case "authorize": {
-      const title = rest.find((a) => !a.startsWith("-"));
+      const flagAt = (name: string) => {
+        const i = rest.indexOf(name);
+        return i >= 0 ? rest[i + 1] : undefined;
+      };
+      const title = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "-m" && rest[i - 1] !== "--repo");
       if (!title) {
-        process.stderr.write('usage: nerveplane authorize "<title>" [-m "<description>"]\n');
+        process.stderr.write('usage: nerveplane authorize "<title>" [-m "<description>"] [--repo <id>] [--all]\n');
         return 1;
       }
-      const mi = rest.indexOf("-m");
-      const description = mi >= 0 ? rest[mi + 1] : undefined;
+      const description = flagAt("-m");
       const token = ownerToken();
       if (!token) {
         process.stderr.write("nerveplane: no owner secret — run 'nerveplane owner init' first\n");
         return 1;
       }
       await ensureDaemon();
+
+      // Scope the decision so agents' repo-scoped `decision` queries find it.
+      // Default: the current repo; --repo <id> targets another; --all = global (no repo scope).
+      let repoId: string | undefined;
+      let scopeLabel = "all repos (global)";
+      if (!rest.includes("--all") && !rest.includes("--global")) {
+        repoId = flagAt("--repo");
+        if (!repoId) {
+          const reg = await api<{ repo: { id: string; name: string } }>("POST", "/api/v1/repos/register", { path: process.cwd() });
+          repoId = reg.data?.repo?.id;
+          scopeLabel = reg.data?.repo ? `${reg.data.repo.name} (${repoId})` : "current repo";
+        } else {
+          scopeLabel = repoId;
+        }
+      }
+
       const res = await api<{ decision: { id: string; ownerVerified: boolean } }>("POST", "/api/v1/decisions", {
         title,
         description,
         created_by: "owner",
         owner_token: token,
+        ...(repoId ? { scope: { repos: [repoId] }, repo_scope: [repoId] } : {}),
       });
       const d = res.data?.decision;
       if (!res.ok || !d?.ownerVerified) {
@@ -180,7 +201,9 @@ export async function runCli(argv: string[]): Promise<number> {
         );
         return 1;
       }
-      process.stdout.write(`nerveplane: recorded owner-verified decision ${d.id}\n  "${title}"\n  Agents/workers can now trust this as a genuine owner directive.\n`);
+      process.stdout.write(
+        `nerveplane: recorded owner-verified decision ${d.id}\n  "${title}"\n  scope: ${scopeLabel}\n  Agents in scope can now trust this as a genuine owner directive.\n`,
+      );
       return 0;
     }
 
