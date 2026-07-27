@@ -47,6 +47,8 @@ nerveplane worker --agent codex --print    # preview the exact `codex exec …` 
 nerveplane worker --agent codex            # run it
 ```
 
+> **Why Codex runs with `--dangerously-bypass-approvals-and-sandbox`:** in `codex exec` (non-interactive), every MCP tool call raises an approval *elicitation*. With no interactive channel, Codex auto-resolves it with **Cancel** — even under `approval_policy=never` — so the nerveplane tools would silently no-op and the model would fabricate a reply. The bypass flag is Codex's documented escape hatch for externally-sandboxed automation; the worker runs on your own machine at the same trust level as an interactive Codex session (the moral equivalent of Claude's `--permission-mode dontAsk --allowedTools mcp__nerveplane`). Confirmed live via `nerveplane doctor --agent codex --run`.
+
 ## Adding another CLI
 
 Each provider is one self-contained adapter in `src/agents/` implementing the `AgentProvider` interface (`headlessArgs`, `parseResult`, `install`, `detect`, `capabilities`). Nothing else in the codebase knows a provider name, so a new CLI is a single new adapter file registered in `src/agents/index.ts`.

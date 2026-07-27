@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getProvider, listProviders, DEFAULT_AGENT } from "../src/agents/index.ts";
@@ -36,8 +36,10 @@ test("claude headlessArgs is byte-identical to the shipped invocation (regressio
 
 // --- per-adapter headless argv ---
 test("codex + opencode headlessArgs use each CLI's documented form", () => {
-  expect(getProvider("codex").headlessArgs("P", {})).toEqual(["exec", "P", "--json", "--full-auto"]);
-  expect(getProvider("codex").headlessArgs("P", { model: "gpt" })).toEqual(["exec", "P", "--json", "--full-auto", "--model", "gpt"]);
+  // codex exec needs --dangerously-bypass-approvals-and-sandbox: otherwise the
+  // MCP tool-call elicitation is auto-cancelled in headless mode (validated live).
+  expect(getProvider("codex").headlessArgs("P", {})).toEqual(["exec", "P", "--json", "--dangerously-bypass-approvals-and-sandbox"]);
+  expect(getProvider("codex").headlessArgs("P", { model: "gpt" })).toEqual(["exec", "P", "--json", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt"]);
   expect(getProvider("opencode").headlessArgs("P", {})).toEqual(["run", "P", "--format", "json"]);
   // non-claude providers ignore resume/inline-mcp (not supported)
   expect(getProvider("codex").capabilities.resume).toBe(false);
@@ -47,11 +49,20 @@ test("codex + opencode headlessArgs use each CLI's documented form", () => {
 // --- parseResult per provider ---
 test("parseResult extracts result + sessionId per provider", () => {
   expect(getProvider("claude").parseResult('{"session_id":"s1","result":"pong"}')).toEqual({ result: "pong", sessionId: "s1" });
-  expect(getProvider("codex").parseResult('{"session_id":"c1"}\n{"text":"pong"}\n')).toEqual({ result: "pong", sessionId: "c1" });
+  // codex exec --json: typed event envelopes; text nested in item.completed →
+  // item.type "agent_message" → item.text; session id from thread.started.
+  const codexStream =
+    '{"type":"thread.started","thread_id":"c1"}\n' +
+    '{"type":"turn.started"}\n' +
+    '{"type":"item.completed","item":{"id":"item_0","type":"mcp_tool_call","tool":"discover","status":"completed"}}\n' +
+    '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"FOUND 2"}}\n';
+  expect(getProvider("codex").parseResult(codexStream)).toEqual({ result: "FOUND 2", sessionId: "c1" });
   expect(getProvider("opencode").parseResult('{"result":"pong","sessionId":"o1"}')).toEqual({ result: "pong", sessionId: "o1" });
   // tolerant fallbacks
   expect(getProvider("claude").parseResult("not json").result).toBeUndefined();
   expect(getProvider("codex").parseResult("plain text out").result).toBe("plain text out");
+  // a stream with no agent_message falls back to raw stdout (never silently empty)
+  expect(getProvider("codex").parseResult('{"type":"turn.completed"}').result).toBe('{"type":"turn.completed"}');
 });
 
 // --- capabilities matrix (guards accidental drift) ---
@@ -75,11 +86,24 @@ test("opencode install registers the MCP server + writes AGENTS.md", () => {
   expect(res.mcpRegistered).toBe(true);
 });
 
-// --- codex install is dry-runnable and targets the TOML config (no real ~/.codex writes) ---
-test("codex install (print) targets ~/.codex/config.toml + AGENTS.md", () => {
+// --- codex install writes the TOML MCP block + AGENTS.md (hermetic via $CODEX_HOME) ---
+test("codex install registers the MCP server in config.toml + writes AGENTS.md", () => {
   const dir = mkdtempSync(join(tmpdir(), "np-cx-"));
-  const res = getProvider("codex").install(dir, { print: true });
-  expect(res.files.some((f) => f.endsWith(join(".codex", "config.toml")))).toBe(true);
-  expect(res.files.some((f) => f.endsWith("AGENTS.md"))).toBe(true);
-  expect(existsSync(join(dir, "AGENTS.md"))).toBe(false); // print → nothing written
+  const codexHome = mkdtempSync(join(tmpdir(), "np-cxhome-"));
+  const prev = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    const res = getProvider("codex").install(dir, {});
+    const toml = readFileSync(join(codexHome, "config.toml"), "utf8");
+    expect(toml).toContain("[mcp_servers.nerveplane]");
+    expect(toml).toMatch(/command = "(nerveplane|bun)"/);
+    expect(readFileSync(join(dir, "AGENTS.md"), "utf8")).toContain("## Nerveplane coordination");
+    expect(res.mcpRegistered).toBe(true);
+    // idempotent: a second install detects the existing block (no dup)
+    const again = getProvider("codex").install(dir, {});
+    expect(again.files.some((f) => f.endsWith(join("config.toml")))).toBe(false);
+  } finally {
+    if (prev === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prev;
+  }
 });

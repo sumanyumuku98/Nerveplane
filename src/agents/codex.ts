@@ -6,39 +6,58 @@ import type { AgentProvider, HeadlessOptions, InstallResult, ProviderInstallOpti
 
 /**
  * OpenAI Codex CLI adapter. MCP config is TOML at `~/.codex/config.toml`
- * (`[mcp_servers.<name>]`), headless via `codex exec … --json --full-auto`.
- * NOTE: Codex's exact `exec` flags/output are version-dependent — validate with
- * `nerveplane doctor --agent codex --run` before relying on it. Codex supports
+ * (`[mcp_servers.<name>]`), headless via
+ * `codex exec … --json --dangerously-bypass-approvals-and-sandbox`.
+ *
+ * Why the bypass flag: in `codex exec` (non-interactive), every MCP tool call
+ * raises an approval *elicitation*. With no interactive channel, Codex
+ * auto-resolves it with `decision: Cancel` — even under `approval_policy=never`
+ * — so the nerveplane tools silently no-op and the model fabricates a reply.
+ * `--dangerously-bypass-approvals-and-sandbox` is Codex's documented escape
+ * hatch for externally-sandboxed automation (the worker runs on the user's own
+ * machine, same trust level as an interactive Codex session). It is the moral
+ * equivalent of Claude's `--permission-mode dontAsk --allowedTools mcp__nerveplane`.
+ * Validated live via `nerveplane doctor --agent codex --run`. Codex supports
  * hooks, but Nerveplane doesn't wire them this pass (MCP + AGENTS.md only).
  */
-const CONFIG = () => join(homedir(), ".codex", "config.toml");
+// Codex reads its config from $CODEX_HOME (default ~/.codex) — honoring it keeps
+// us aligned with codex's own resolution and lets tests point at a temp dir.
+const codexHome = () => process.env.CODEX_HOME || join(homedir(), ".codex");
+const CONFIG = () => join(codexHome(), "config.toml");
 
 export function codexHeadlessArgs(prompt: string, opts: HeadlessOptions): string[] {
-  // `--full-auto` = run non-interactively (auto-approve within the sandbox).
-  const args = ["exec", prompt, "--json", "--full-auto"];
+  const args = ["exec", prompt, "--json", "--dangerously-bypass-approvals-and-sandbox"];
   if (opts.model) args.push("--model", opts.model);
   return args;
 }
 
-/** Codex `exec --json` emits a JSONL event stream; take the last event that
- *  carries assistant text. Tolerant of shape drift (falls back to raw stdout). */
+/** Codex `exec --json` emits a JSONL stream of typed event envelopes. The final
+ *  assistant text is `item.completed` → `item.type === "agent_message"` →
+ *  `item.text`; the session id is `thread_id` on the `thread.started` event.
+ *  Tolerant of shape drift (flat fields, then raw stdout). */
 export function codexParseResult(stdout: string): { result?: string; sessionId?: string } {
   const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
-  let result: string | undefined;
+  let agentMsg: string | undefined;
+  let flatMsg: string | undefined;
   let sessionId: string | undefined;
   for (const line of stdout.split("\n")) {
     const t = line.trim();
     if (!t.startsWith("{")) continue;
     try {
       const ev = JSON.parse(t) as Record<string, unknown>;
-      sessionId = str(ev.session_id) ?? str(ev.thread_id) ?? str(ev.conversation_id) ?? sessionId;
-      const text = str(ev.text) ?? str(ev.message) ?? str(ev.content);
-      if (text) result = text;
+      sessionId = str(ev.thread_id) ?? str(ev.session_id) ?? str(ev.conversation_id) ?? sessionId;
+      const item = ev.item as Record<string, unknown> | undefined;
+      if (item && item.type === "agent_message") {
+        const text = str(item.text);
+        if (text) agentMsg = text;
+      }
+      const flat = str(ev.text) ?? str(ev.message) ?? str(ev.content);
+      if (flat) flatMsg = flat;
     } catch {
       /* skip non-JSON lines */
     }
   }
-  if (!result && stdout.trim()) result = stdout.trim();
+  const result = agentMsg ?? flatMsg ?? (stdout.trim() || undefined);
   return { result, sessionId };
 }
 
@@ -64,7 +83,7 @@ export const codex: AgentProvider = {
     const existing = readTextIfExists(cfg);
     if (!existing.includes("[mcp_servers.nerveplane]")) {
       if (!opts.print) {
-        mkdirSync(join(homedir(), ".codex"), { recursive: true });
+        mkdirSync(codexHome(), { recursive: true });
         appendFileSync(cfg, block);
       }
       files.push(cfg);
