@@ -96,7 +96,8 @@ test("codex install registers the MCP server in config.toml + writes AGENTS.md",
     const res = getProvider("codex").install(dir, {});
     const toml = readFileSync(join(codexHome, "config.toml"), "utf8");
     expect(toml).toContain("[mcp_servers.nerveplane]");
-    expect(toml).toMatch(/command = "(nerveplane|bun)"/);
+    // command may be `nerveplane` (on PATH) or a full path to the bun runtime (CI/dev)
+    expect(toml).toMatch(/command = ".*(nerveplane|bun).*"/);
     expect(readFileSync(join(dir, "AGENTS.md"), "utf8")).toContain("## Nerveplane coordination");
     expect(res.mcpRegistered).toBe(true);
     // idempotent: a second install detects the existing block (no dup)
