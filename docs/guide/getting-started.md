@@ -60,6 +60,18 @@ nerveplane install claude-code               # project-scoped hooks in ./.claude
 
 `init` is optional — an agent's `register` tool (and the SessionStart hook) register the repo automatically. See [Claude Code Integration](/guide/claude-code) for details.
 
+## Using a different CLI agent
+
+The setup above is for **Claude Code**, but Nerveplane is **agent-agnostic** — the seven MCP tools work with any MCP-capable CLI. **OpenAI Codex** and **opencode** are supported out of the box:
+
+```bash
+nerveplane install codex      # → ~/.codex/config.toml + AGENTS.md
+nerveplane install opencode   # → opencode.json + AGENTS.md
+nerveplane doctor             # which agents are installed + MCP-registered
+```
+
+Hooks (zero-touch auto-register / warning injection) are a Claude Code feature; other CLIs coordinate via the MCP tools + an `AGENTS.md` protocol. See the [CLI Agents guide](/guide/agents) for the full support matrix and per-provider setup.
+
 ## See it work
 
 Run two agents in two worktrees of the same repo and have one edit a file. Without the first agent publishing anything, the daemon senses the change and the second agent's next `sync` surfaces it:

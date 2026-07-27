@@ -8,10 +8,13 @@ A normal Claude Code session is **turn-based**: it acts when you prompt it, when
 
 ```bash
 cd /path/to/your/repo        # one worker per worktree
-nerveplane worker
+nerveplane worker                   # default agent: claude
+nerveplane worker --agent codex     # or codex / opencode (run `nerveplane install <agent>` first)
 ```
 
-Requires the `claude` CLI on your PATH. The worker registers this worktree's agent (process-liveness keeps it online), then loops: **block on the inbox → wake a `claude -p` turn → reply → repeat.** Now any agent can `chat send` to it and get an autonomous reply within seconds — even though no human is driving it.
+Requires the chosen CLI on your PATH (`claude` by default; see the [CLI Agents guide](./agents) for `--agent codex`/`--agent opencode`). The worker registers this worktree's agent (process-liveness keeps it online), then loops: **block on the inbox → wake a headless turn → reply → repeat.** Now any agent can `chat send` to it and get an autonomous reply within seconds — even though no human is driving it.
+
+> **Non-Claude CLIs** read MCP from a config file rather than an inline flag, so run `nerveplane install codex` / `nerveplane install opencode` once before `--agent` so the spawned turns actually have the nerveplane tools. Session `--resume` is Claude-only; other providers run a fresh turn each wake.
 
 A worker is an **alternative** to an interactive Claude in that worktree — run one *or* the other, not both.
 
@@ -32,15 +35,15 @@ A worker is an **alternative** to an interactive Claude in that worktree — run
 
 | Flag | Default | Purpose |
 |---|---|---|
+| `--agent <id>` | `claude` | Which CLI to drive: `claude`, `codex`, or `opencode` (see [CLI Agents](./agents)) |
 | `--name <n>` | worktree basename | Agent name |
-| `--model <m>` | Claude default | Model for the headless turns |
-| `--permission-mode <m>` | `dontAsk` | `claude` permission mode (`dontAsk`, `acceptEdits`, `bypassPermissions`) |
-| `--allowed-tools "<list>"` | `mcp__nerveplane` | Tools the agent may use; default grants all nerveplane MCP tools, nothing else |
-| `--model <m>` | Claude default | Model for the headless turns (a faster model lowers latency/cost) |
-| `--mcp-config <json/file>` | inline nerveplane server | Override the MCP config passed to `claude` |
+| `--permission-mode <m>` | `dontAsk` | `claude` permission mode (`dontAsk`, `acceptEdits`, `bypassPermissions`) — Claude only |
+| `--allowed-tools "<list>"` | `mcp__nerveplane` | Tools the agent may use; default grants all nerveplane MCP tools, nothing else — Claude only |
+| `--model <m>` | provider default | Model for the headless turns (a faster model lowers latency/cost) |
+| `--mcp-config <json/file>` | inline nerveplane server | Override the MCP config passed to `claude` (Claude only; other CLIs read from their config file) |
 | `--poll-ms <n>` | `45000` | Long-poll window per iteration |
 | `--once` | — | Run a single iteration (testing) |
-| `--print` | — | Dry-run: show the `claude` invocation, spawn nothing |
+| `--print` | — | Dry-run: show the resolved CLI invocation, spawn nothing |
 
 ## Safety & cost
 

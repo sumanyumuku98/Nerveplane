@@ -24,6 +24,7 @@ export default defineConfig({
           items: [
             { text: "Getting Started", link: "/guide/getting-started" },
             { text: "Concepts", link: "/guide/concepts" },
+            { text: "CLI Agents", link: "/guide/agents" },
             { text: "Claude Code Integration", link: "/guide/claude-code" },
             { text: "Autonomous Workers", link: "/guide/autonomous-workers" },
             { text: "Security", link: "/guide/security" },

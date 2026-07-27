@@ -1,5 +1,7 @@
 # Claude Code Integration
 
+> Claude Code is one of several supported CLIs — see the [CLI Agents guide](./agents) for the full support matrix (Codex, opencode, any MCP client). This page covers Claude Code's first-class integration: the zero-touch PreToolUse/SessionStart/Stop hooks.
+
 **Fastest path — once per machine:**
 
 ```bash
