@@ -42,9 +42,10 @@ None of these are git conflicts, so nothing catches them until merge — and [ne
 | ⚔️ **Conflict detection** | Same-file (high) and same-package (medium) collisions between agents, routed to exactly the pair involved, with a conservative, dismissible noise budget. |
 | 🔗 **Contract-aware cross-repo routing** | Change an OpenAPI / GraphQL / AsyncAPI / protobuf contract and consumer-repo agents (direct, transitive, and test owners) get warned about the breaking change — across repo boundaries. |
 | 📒 **Decision ledger** | Durable project decisions live separately from chat and are queryable by file, repo, service, or task. |
+| 🧠 **Universal memory** | A shared, durable memory across agents **and CLIs**: `remember` gotchas/decisions/progress, `recall` them (auto-injected at session start + into worker turns). One agent's context resumes on another — even a different CLI. Keyword (FTS5) local by default; semantic pluggable. |
 | 💬 **Direct agent-to-agent chat** | A first-class `chat` tool: threaded DMs between agents with **real-time delivery** — an agent can `wait` (block) for a reply, and incoming messages are injected before a teammate's next edit. |
 | 🤖 **Autonomous workers** | `nerveplane worker --agent <claude\|codex\|opencode>` runs an agent always-on: it blocks on its inbox and wakes a headless turn to reply to teammates with **no human in the loop** — so messaging an idle agent gets an autonomous response. |
-| 🔌 **MCP-native, agent-agnostic** | Seven consolidated MCP tools over stdio **and** Streamable HTTP — usable by **any MCP-capable CLI** (Claude Code, OpenAI Codex, opencode, …). On Claude Code you also get PreToolUse/SessionStart/Stop hooks that inject warnings, auto-register agents, and handle DMs before idling. |
+| 🔌 **MCP-native, agent-agnostic** | Eight consolidated MCP tools over stdio **and** Streamable HTTP — usable by **any MCP-capable CLI** (Claude Code, OpenAI Codex, opencode, …). On Claude Code you also get PreToolUse/SessionStart/Stop hooks that inject warnings, auto-register agents, and handle DMs before idling. |
 | 📊 **Live dashboard** | A Svelte dashboard (`/dashboard`) with SSE-driven agents, conflicts, timeline, chat, decisions, and human actions. |
 | 🖥️ **Terminal UI** | `nerveplane watch` — a full-screen SSE-driven monitor (agents, conflicts, events, chat) in the terminal; plus interactive pickers for `worker`/`install`/`conflicts`. Zero-dep ANSI, ships in the single binary. |
 | 💻 **Local-first** | One user-level daemon, SQLite (WAL), no cloud dependency. Single binary, or `npm`. |
@@ -69,7 +70,7 @@ npm i -g nerveplane
 
 ## Quickstart
 
-`nerveplane install <agent>` registers the [seven MCP tools](https://sumanyumuku98.github.io/Nerveplane/reference/mcp-tools) with your CLI and drops in the coordination instructions. Pick your agent:
+`nerveplane install <agent>` registers the [eight MCP tools](https://sumanyumuku98.github.io/Nerveplane/reference/mcp-tools) with your CLI and drops in the coordination instructions. Pick your agent:
 
 ```bash
 # Claude Code — global, once per machine (also installs the zero-touch hooks)
@@ -160,7 +161,7 @@ CI (typecheck · tests · conflict-detection eval gate · dashboard + binary bui
 
 ## Status
 
-**v0.13.0 — published.** **Terminal UI** — interactive agent/conflict pickers (`worker`/`install`/`conflicts`) and `nerveplane watch`, a full-screen SSE-driven monitor (agents · conflicts · events · chat) right in the terminal. Built on **CLI-agent-agnostic** — works with Claude Code, OpenAI Codex, and opencode (any MCP-capable CLI) via per-provider adapters, `nerveplane worker --agent <id>`, `nerveplane install <codex|opencode>`, and `nerveplane doctor` (both non-Claude providers validated live). Plus: passive sensing, intra- and cross-repo conflict/contract detection (4 formats), decision ledger, direct real-time agent-to-agent chat with autonomous Stop-hook replies, **always-on autonomous workers** (`nerveplane worker`), **owner-verified directives + sensitive-content scanning**, dashboard, MCP (stdio + HTTP, 7 tools), one-command global setup with zero-touch agent registration, process-based agent liveness, supervised login service (launchd/systemd), and full distribution (npm + binaries + Homebrew). Future work (deeper semantic intelligence, the cross-org A2A protocol + full signed identities, team/distributed mode) is tracked in the [roadmap](https://sumanyumuku98.github.io/Nerveplane/roadmap).
+**v0.13.0 — published.** **Terminal UI** — interactive agent/conflict pickers (`worker`/`install`/`conflicts`) and `nerveplane watch`, a full-screen SSE-driven monitor (agents · conflicts · events · chat) right in the terminal. Built on **CLI-agent-agnostic** — works with Claude Code, OpenAI Codex, and opencode (any MCP-capable CLI) via per-provider adapters, `nerveplane worker --agent <id>`, `nerveplane install <codex|opencode>`, and `nerveplane doctor` (both non-Claude providers validated live). Plus: passive sensing, intra- and cross-repo conflict/contract detection (4 formats), decision ledger, direct real-time agent-to-agent chat with autonomous Stop-hook replies, **always-on autonomous workers** (`nerveplane worker`), **owner-verified directives + sensitive-content scanning**, dashboard, MCP (stdio + HTTP, 8 tools), one-command global setup with zero-touch agent registration, process-based agent liveness, supervised login service (launchd/systemd), and full distribution (npm + binaries + Homebrew). Future work (deeper semantic intelligence, the cross-org A2A protocol + full signed identities, team/distributed mode) is tracked in the [roadmap](https://sumanyumuku98.github.io/Nerveplane/roadmap).
 
 ## Contributing
 

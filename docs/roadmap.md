@@ -19,6 +19,7 @@ This document is written so **any agent (or contributor) can pick up the next ph
 | M10 **Autonomous workers** — always-on `nerveplane worker`, wake-on-message headless turns | ✅ |
 | M11 **CLI-agent-agnostic** — provider adapters (Claude / Codex / opencode), `worker --agent`, `install <agent>`, `doctor` | ✅ |
 | M12 **Terminal UI** — interactive pickers (`worker`/`install`/`conflicts`) + `nerveplane watch` live SSE monitor | ✅ |
+| M13 **Universal memory** — cross-agent/cross-CLI `memory` tool (remember/recall), FTS5 keyword engine, SessionStart/worker recall injection | ✅ |
 
 The shipped product already delivers the full thesis: keep parallel coding agents aligned across repos/branches/worktrees/services/contracts. M8/M9 deepen the moat and extend beyond a single laptop.
 
@@ -143,6 +144,23 @@ prebuilts, which `bun build --compile` doesn't bundle and can't cross-compile fr
 **Verify:** existing suite unchanged + `tests/tui.test.ts` (SSE parser, reducer, `renderLines` snapshot, `resolveAgent`
 non-TTY/explicit paths, ANSI no-op off-TTY); `bun build --compile` produces a working binary; `nerveplane worker
 --print` / piped `agents`/`events`/`conflicts` byte-identical to before; `nerveplane watch --once` prints a snapshot.
+
+---
+
+## M13 — Universal memory (cross-agent / cross-CLI) — ✅ shipped
+
+**Goal:** a durable, retrievable memory shared across agents and CLIs — so context outlives a session and a task can resume on a different agent or CLI (e.g. Claude dies mid-task → a Codex worker resumes). Fills the gap between the events firehose (episodic, ephemeral) and the decision ledger (authoritative facts): agent-authored, distilled *experience*.
+
+**Shipped:** an 8th MCP tool `memory` (remember/recall/list/forget) with mem0-style scoping (repo≈user, agent, task≈run) and a `kind` tag (`fact|episode|note`); a `memories` table + FTS5 virtual table (hand-written migration, runs inside the compiled binary); a **ports-and-adapters** `MemoryBackend` (default `KeywordBackend` = FTS5/BM25, zero-dep; `SemanticBackend` stubbed for v2). Recall is injected automatically at **SessionStart** and into **worker** turns (scoped to the repo, byte-identical when empty). Capture is explicit, guided by the agent instructions. `nerveplane memory recall|list` for humans. Records are owned in our SQLite → engines are swappable with no migration. See the [Memory guide](/guide/memory).
+
+**Why keyword-first (not mem0 now):** semantic retrieval needs an embedder/vector store (egress or a native `dlopen` extension that won't survive `bun build --compile`), so it can't be the zero-config default. The interface + owned records are the future-proofing — flip `NERVEPLANE_MEMORY=hybrid` + an embedder later with no rewrite.
+
+**Follow-ups (future)**
+- **Semantic backend (v2):** embedder-only (no LLM extraction), embeddings as BLOBs in our SQLite, brute-force cosine, RRF-fused with keyword; `NERVEPLANE_EMBEDDER=ollama|openai`. mem0 as a possible adapter.
+- **Automatic extraction:** optionally distill memories from chat/publish traffic (adds an LLM dependency).
+- **PreToolUse file-scoped recall:** inject memories for the files about to be edited (gated for token cost).
+
+**Verify:** existing suite unchanged + `tests/memory.test.ts` (unit + integration: round-trip/FTS, multi-agent scope isolation, `memory` tool via `coreCtx`, cross-CLI continuity asserted, pinned boost); golden guard that SessionStart/worker output is byte-identical when memory is empty; `bun build --compile` binary runs the embedded FTS5 migration and round-trips a memory.
 
 ---
 

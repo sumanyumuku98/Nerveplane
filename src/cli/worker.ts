@@ -34,14 +34,26 @@ export function buildClaudeArgs(prompt: string, sessionId: string | undefined, o
   return claudeHeadlessArgs(prompt, { sessionId, model: opts.model, permissionMode: opts.permissionMode, allowedTools: opts.allowedTools, mcpConfig: opts.mcpConfig });
 }
 
-/** Build the turn prompt handed to the headless agent (pure — unit-tested). */
-export function buildWorkerPrompt(work: WorkResult, agentId: string): string {
+export interface RecalledMemory {
+  kind: string;
+  title?: string | null;
+  body: string;
+}
+
+/** Build the turn prompt handed to the headless agent (pure — unit-tested).
+ *  Recalled memories are injected only when present → empty store yields output
+ *  byte-identical to before this feature. */
+export function buildWorkerPrompt(work: WorkResult, agentId: string, memories: RecalledMemory[] = []): string {
   const lines = [`You are Nerveplane agent ${agentId}, running autonomously. New coordination items arrived:`, ""];
   for (const m of work.messages) {
     lines.push(`- 💬 message from ${m.from ?? "a teammate"} (thread ${m.threadId ?? "?"})${m.subject ? ` — ${m.subject}` : ""}: ${m.body}`);
   }
   for (const u of work.updates) {
     lines.push(`- ⚠️ [${u.priority}] ${u.summary}${u.requiredAction ? ` — required: ${u.requiredAction}` : ""}`);
+  }
+  if (memories.length) {
+    lines.push("", "📓 Relevant memory (recalled for this repo — prior decisions/gotchas/progress):");
+    for (const m of memories) lines.push(`- [${m.kind}] ${m.title ? `${m.title}: ` : ""}${m.body}`);
   }
   lines.push(
     "",
@@ -107,13 +119,14 @@ export async function runWorker(opts: WorkerOptions = {}, runner?: TurnRunner): 
   }
 
   await ensureDaemon();
-  const reg = await api<{ agent_id: string }>("POST", "/api/v1/register", {
+  const reg = await api<{ agent_id: string; agent?: { repoId?: string } }>("POST", "/api/v1/register", {
     name,
     repo_path: cwd,
     worktree_path: cwd,
     connection_pid: process.pid,
   });
   const agentId = reg.data?.agent_id;
+  const repoId = reg.data?.agent?.repoId;
   if (!agentId) {
     process.stderr.write("nerveplane worker: failed to register with the daemon\n");
     return 1;
@@ -164,9 +177,18 @@ export async function runWorker(opts: WorkerOptions = {}, runner?: TurnRunner): 
     process.stdout.write(`  ↳ ${newMsgs.length} message(s) / ${newUpdates.length} update(s) — running a turn…\n`);
     log(`turn start: ${newMsgs.length} msg, ${newUpdates.length} update`);
     const t0 = Date.now();
+    let memories: RecalledMemory[] = [];
+    if (repoId) {
+      try {
+        const m = await api<{ memories: RecalledMemory[] }>("POST", "/api/v1/memory", { action: "recall", repo_id: repoId, limit: 5 });
+        memories = m.data?.memories ?? [];
+      } catch {
+        /* recall is best-effort; a turn must never fail on it */
+      }
+    }
     let r: TurnResult;
     try {
-      r = await run(buildWorkerPrompt({ messages: newMsgs, updates: newUpdates, timedOut: false }, agentId), { cwd, sessionId, opts });
+      r = await run(buildWorkerPrompt({ messages: newMsgs, updates: newUpdates, timedOut: false }, agentId, memories), { cwd, sessionId, opts });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       process.stderr.write(`  ↳ turn could not start: ${msg}\n`);

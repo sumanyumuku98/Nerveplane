@@ -3,7 +3,7 @@ import { z } from "zod";
 import pkg from "../../package.json" with { type: "json" };
 
 /**
- * The 7 consolidated MCP tools (plan Part C.3), defined once and shared by both
+ * The 8 consolidated MCP tools (plan Part C.3), defined once and shared by both
  * the stdio server and the Streamable HTTP endpoint. A `ToolCtx` provides the
  * backend: REST-proxy for the spawned stdio bridge, core-direct inside the
  * daemon. Schemas/descriptions live here so the two transports never drift.
@@ -16,6 +16,7 @@ export interface ToolCtx {
   decision(args: Record<string, unknown>): Promise<unknown>;
   discover(args: Record<string, unknown>): Promise<unknown>;
   chat(args: Record<string, unknown>): Promise<unknown>;
+  memory(args: Record<string, unknown>): Promise<unknown>;
 }
 
 function ok(data: unknown) {
@@ -129,5 +130,27 @@ export function registerTools(server: McpServer, ctx: ToolCtx): void {
       timeout_ms: z.number().optional().describe("max ms to block on action='wait' (default 25000, max 50000)"),
     },
     (args) => wrap(() => ctx.chat(args)),
+  );
+
+  server.tool(
+    "memory",
+    "Durable cross-agent, cross-CLI memory. action='remember' to store a lasting fact/gotcha or task-progress note; 'recall' to retrieve relevant memories (semantic when enabled, keyword otherwise); 'forget'; 'list'. Recall at the START of a task; remember decisions/gotchas and (kind='episode') where-you-left-off before finishing or handing off — so another agent (even a different CLI) can resume. Scope with repo_id/task_id so recall stays relevant.",
+    {
+      agent_id: z.string().optional().describe("your agent id (the author)"),
+      action: z.enum(["remember", "recall", "forget", "list"]),
+      kind: z.enum(["fact", "episode", "note"]).optional().describe("fact = durable knowledge/gotcha; episode = what happened / task progress; note = misc"),
+      title: z.string().optional(),
+      body: z.string().optional().describe("the memory text (for action='remember')"),
+      query: z.string().optional().describe("search text (for action='recall')"),
+      repo_id: z.string().optional(),
+      task_id: z.string().optional(),
+      file: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      pinned: z.boolean().optional().describe("keep this memory boosted in recall"),
+      supersedes: z.string().optional().describe("id of a memory this replaces"),
+      id: z.string().optional().describe("memory id (for action='forget')"),
+      limit: z.number().optional(),
+    },
+    (args) => wrap(() => ctx.memory(args)),
   );
 }

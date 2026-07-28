@@ -1,6 +1,6 @@
 # CLI Agents
 
-Nerveplane is **agent-agnostic**. Its coordination substrate — the seven MCP tools (stdio **and** streamable HTTP), the REST API, and the daemon — is standard MCP, so **any MCP-capable coding CLI** can register, sync, publish, chat, and record decisions. Claude Code, OpenAI Codex, and opencode are supported out of the box; anything else that speaks MCP works too.
+Nerveplane is **agent-agnostic**. Its coordination substrate — the eight MCP tools (stdio **and** streamable HTTP), the REST API, and the daemon — is standard MCP, so **any MCP-capable coding CLI** can register, sync, publish, chat, and record decisions. Claude Code, OpenAI Codex, and opencode are supported out of the box; anything else that speaks MCP works too.
 
 ## Support matrix
 

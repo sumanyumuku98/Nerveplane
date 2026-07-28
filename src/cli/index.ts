@@ -48,6 +48,8 @@ Project:
   service uninstall      Remove the daemon service unit
   services               List services and contracts
   dashboard              Open the live web dashboard in your browser
+  memory                 Inspect the shared memory store: recall "<query>" | list
+                         (flags: --repo <id>, --task <id>, --limit <n>)
   watch                  Live full-screen terminal monitor — agents, conflicts,
                          events, chat (same data as the dashboard). alias: monitor; --once
   worker                 Run this worktree's agent as an always-on autonomous
@@ -466,6 +468,34 @@ export async function runCli(argv: string[]): Promise<number> {
     case "watch":
     case "monitor":
       return runWatch({ once: rest.includes("--once") });
+
+    case "memory": {
+      const flag = (name: string): string | undefined => {
+        const i = rest.indexOf(name);
+        return i >= 0 ? rest[i + 1] : undefined;
+      };
+      const sub = rest[0];
+      if (sub !== "recall" && sub !== "list") {
+        process.stderr.write('usage: nerveplane memory <recall "<query>" | list> [--repo <id>] [--task <id>] [--limit <n>]\n');
+        return 1;
+      }
+      const query = sub === "recall" ? rest.find((a, i) => i > 0 && !a.startsWith("-") && rest[i - 1] !== "--repo" && rest[i - 1] !== "--task" && rest[i - 1] !== "--limit") : undefined;
+      await ensureDaemon();
+      const res = await api<{ memories: { id: string; kind: string; title: string | null; body: string; repoId: string | null; taskId: string | null; createdAt: string }[] }>(
+        "POST",
+        "/api/v1/memory",
+        { action: sub === "recall" ? "recall" : "list", query, repo_id: flag("--repo"), task_id: flag("--task"), limit: flag("--limit") ? Number(flag("--limit")) : undefined },
+      );
+      const memories = res.data?.memories ?? [];
+      if (memories.length === 0) {
+        process.stdout.write("nerveplane: no memories\n");
+        return 0;
+      }
+      for (const m of memories) {
+        process.stdout.write(`  [${m.kind.padEnd(7)}] ${m.title ? `${m.title} — ` : ""}${m.body.replace(/\s+/g, " ")}\n            (${m.id}${m.repoId ? ` repo=${m.repoId}` : ""}${m.taskId ? ` task=${m.taskId}` : ""})\n`);
+      }
+      return 0;
+    }
 
     case "eval":
       return runEvalCli();
