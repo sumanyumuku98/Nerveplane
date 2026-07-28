@@ -18,7 +18,15 @@
 import { getProvider, listProviders } from "../../src/agents/index.ts";
 
 const CRITICAL_FACT = "IMPORTANT: authentication is centralized in src/lib/authClient.ts — never implement your own auth; import from there.";
-const DISTRACTORS = Array.from({ length: 40 }, (_, i) => `- note ${i}: unrelated refactor of module_${i} (renamed helper_${i} → util_${i}); no action needed.`);
+// Lost-in-the-middle needs a substantial context to manifest, so model a realistic
+// busy-team coordination history: NP_EVAL_DISTRACTORS notes (default 200), each a
+// full sentence, ≈8–12k tokens total. Tune via env.
+const N_DISTRACTORS = Number(process.env.NP_EVAL_DISTRACTORS ?? 200);
+const DISTRACTORS = Array.from(
+  { length: N_DISTRACTORS },
+  (_, i) =>
+    `- event ${i}: agent svc_${i % 17} refactored module_${i} — renamed helper_${i} to util_${i}, updated ${3 + (i % 5)} call sites in package pkg_${i % 9}, and bumped the internal changelog; no cross-team action required and no public contract changed.`,
+);
 
 /** Build the naive "dump the whole coordination history into context" prompt,
  *  with the one critical fact at a given position (start | middle | end). */
