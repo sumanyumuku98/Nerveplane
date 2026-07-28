@@ -19,6 +19,11 @@ export const DEFAULT_PORT = Number(process.env.NERVEPLANE_PORT ?? 7734);
 /** Sensitive-content scanning of outbound messages/events: block | warn | off. */
 export const SCAN_MODE = ((m) => (m === "warn" || m === "off" ? m : "block"))(process.env.NERVEPLANE_SCAN);
 
+/** Memory recall engine: keyword (FTS5, default, in-binary, zero-dep) | hybrid (semantic, v2). */
+export const MEMORY_MODE = ((m) => (m === "hybrid" ? "hybrid" : "keyword"))(process.env.NERVEPLANE_MEMORY);
+/** Embedder for the semantic backend (v2 only): none (default) | ollama | openai. */
+export const EMBEDDER = ((e) => (e === "ollama" || e === "openai" ? e : "none"))(process.env.NERVEPLANE_EMBEDDER);
+
 /**
  * Presence. The primary liveness signal is the agent's stdio-bridge process
  * (see core/presence.isAgentLive). The heartbeat TTL is the *fallback* for

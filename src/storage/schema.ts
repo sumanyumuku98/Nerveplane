@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, blob, primaryKey, index } from "drizzle-orm/sqlite-core";
 
 /**
  * Schema mirrors docs/nerveplane_spec.md §12, scoped to the MVP, with two
@@ -201,6 +201,45 @@ export const decisions = sqliteTable("decisions", {
   ownerVerified: integer("owner_verified", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
 });
+
+/**
+ * Agent-authored memory — the universal, cross-agent/cross-CLI recall layer.
+ * Distinct from the decision ledger (authoritative, verifiable rulings) and the
+ * events log (episodic firehose): memories are distilled, durable experience an
+ * agent chooses to keep. Scope keys map to mem0's model (repoId≈user_id,
+ * authorAgentId≈agent_id, taskId≈run_id). `embedding` stays null until a semantic
+ * backend is enabled (v2); a paired FTS5 virtual table `memories_fts` powers the
+ * default keyword recall and is created in the same migration.
+ */
+export const memories = sqliteTable(
+  "memories",
+  {
+    id: text("id").primaryKey(),
+    authorAgentId: text("author_agent_id"),
+    kind: text("kind").$type<"fact" | "episode" | "note">().notNull().default("note"),
+    title: text("title"),
+    body: text("body").notNull(),
+    // scope (all nullable): repoId≈user_id, taskId≈run_id
+    repoId: text("repo_id"),
+    taskId: text("task_id"),
+    branch: text("branch"),
+    serviceId: text("service_id"),
+    file: text("file"),
+    tags: text("tags_json", { mode: "json" }).$type<string[]>(),
+    pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+    supersedes: text("supersedes"),
+    // populated only when a semantic backend (NERVEPLANE_MEMORY=hybrid) is on
+    embedding: blob("embedding"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    expiresAt: text("expires_at"),
+  },
+  (t) => [
+    index("idx_memories_repo").on(t.repoId, t.createdAt),
+    index("idx_memories_task").on(t.taskId, t.createdAt),
+    index("idx_memories_author").on(t.authorAgentId),
+  ],
+);
 
 export const repos = sqliteTable("repos", {
   id: text("id").primaryKey(),

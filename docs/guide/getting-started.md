@@ -62,7 +62,7 @@ nerveplane install claude-code               # project-scoped hooks in ./.claude
 
 ## Using a different CLI agent
 
-The setup above is for **Claude Code**, but Nerveplane is **agent-agnostic** — the seven MCP tools work with any MCP-capable CLI. **OpenAI Codex** and **opencode** are supported out of the box:
+The setup above is for **Claude Code**, but Nerveplane is **agent-agnostic** — the eight MCP tools work with any MCP-capable CLI. **OpenAI Codex** and **opencode** are supported out of the box:
 
 ```bash
 nerveplane install codex      # → ~/.codex/config.toml + AGENTS.md

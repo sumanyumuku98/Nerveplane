@@ -40,4 +40,5 @@ export const restCtx: ToolCtx = {
         return api("POST", "/api/v1/chat/send", withPid(a)).then((r) => r.data);
     }
   },
+  memory: (a) => api("POST", "/api/v1/memory", withPid(a)).then((r) => r.data),
 };

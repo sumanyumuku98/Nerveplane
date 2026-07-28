@@ -8,6 +8,8 @@ import { sendChat, replyChat, threadMessages, listThreads, allThreads, waitForCh
 import { waitForWork } from "../core/worker.ts";
 import { claimTask, updateTask, handoffTask, requestReview, openTasks } from "../core/tasks.ts";
 import { recordDecision, queryDecisions, recentDecisions, setDecisionStatus } from "../core/decisions.ts";
+import { remember, recall, listMemories, forget } from "../core/memory.ts";
+import type { MemoryKind } from "../core/memory.ts";
 import { listConflicts, resolveConflict, dismissConflict } from "../core/conflicts.ts";
 import { scanServiceGraph, listServices, listContracts, invalidateGraphCache } from "../services/contracts.ts";
 import { buildJoinPacket } from "../core/join.ts";
@@ -19,7 +21,7 @@ import { SCAN_MODE } from "../config.ts";
 /**
  * Granular local REST API (mounted at /api/v1). It is the single in-process
  * surface that the CLI, the dashboard, and the stdio MCP proxy all call into.
- * The MCP layer's 7 consolidated tools map onto these endpoints.
+ * The MCP layer's 8 consolidated tools map onto these endpoints.
  */
 export function buildApi(): Hono {
   const api = new Hono();
@@ -278,6 +280,39 @@ export function buildApi(): Hono {
         ownerVerified,
       }),
     });
+  });
+
+  // --- memory (universal cross-agent/cross-CLI recall layer) ---
+  api.post("/memory", async (c) => {
+    const b = await c.req.json();
+    if (b.connection_pid && b.agent_id) noteConnection(b.agent_id, b.connection_pid);
+    const scope = { repoId: b.repo_id ?? b.repoId, taskId: b.task_id ?? b.taskId, kind: b.kind as MemoryKind | undefined, file: b.file };
+    const limit = b.limit as number | undefined;
+    switch (b.action) {
+      case "recall":
+        return c.json({ memories: recall(b.query, scope, { limit }) });
+      case "list":
+        return c.json({ memories: listMemories(scope, { limit }) });
+      case "forget":
+        return c.json({ ok: forget(b.id) });
+      case "remember":
+        return c.json({
+          memory: remember({
+            authorAgentId: b.agent_id ?? b.authorAgentId,
+            kind: b.kind as MemoryKind | undefined,
+            title: b.title,
+            body: b.body,
+            repoId: b.repo_id ?? b.repoId,
+            taskId: b.task_id ?? b.taskId,
+            file: b.file,
+            tags: b.tags,
+            pinned: b.pinned,
+            supersedes: b.supersedes,
+          }),
+        });
+      default:
+        return c.json({ error: `unknown memory action: ${b.action}` }, 400);
+    }
   });
 
   // --- repos & events ---

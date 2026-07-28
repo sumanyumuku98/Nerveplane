@@ -6,6 +6,8 @@ import { sendMessage, syncAgent } from "../core/inbox.ts";
 import { sendChat, replyChat, threadMessages, listThreads, waitForChat } from "../core/chat.ts";
 import { claimTask, updateTask, handoffTask, requestReview } from "../core/tasks.ts";
 import { recordDecision, queryDecisions } from "../core/decisions.ts";
+import { remember, recall, listMemories, forget } from "../core/memory.ts";
+import type { MemoryKind, MemoryScope } from "../core/memory.ts";
 import { buildJoinPacket } from "../core/join.ts";
 
 const s = (v: unknown) => v as string | undefined;
@@ -96,6 +98,34 @@ export const coreCtx: ToolCtx = {
         return { messages: threadMessages(s(a.thread_id)!) };
       default: // "send"
         return sendChat({ senderAgentId: agentId, recipientAgentId: s(a.to), recipientGroup: s(a.recipient_group), threadId: s(a.thread_id), subject: s(a.subject), body: a.body as string, priority: a.priority as Severity | undefined });
+    }
+  },
+
+  async memory(a) {
+    const scope: MemoryScope = { repoId: s(a.repo_id), taskId: s(a.task_id), kind: s(a.kind) as MemoryKind | undefined, file: s(a.file) };
+    const limit = a.limit as number | undefined;
+    switch (a.action) {
+      case "recall":
+        return { memories: recall(s(a.query), scope, { limit }) };
+      case "list":
+        return { memories: listMemories(scope, { limit }) };
+      case "forget":
+        return { ok: forget(s(a.id)!) };
+      default: // "remember"
+        return {
+          memory: remember({
+            authorAgentId: s(a.agent_id),
+            kind: s(a.kind) as MemoryKind | undefined,
+            title: s(a.title),
+            body: a.body as string,
+            repoId: s(a.repo_id),
+            taskId: s(a.task_id),
+            file: s(a.file),
+            tags: a.tags as string[] | undefined,
+            pinned: a.pinned as boolean | undefined,
+            supersedes: s(a.supersedes),
+          }),
+        };
     }
   },
 };

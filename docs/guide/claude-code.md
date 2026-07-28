@@ -22,10 +22,10 @@ nerveplane install claude-code                # project-scoped hooks + instructi
 
 ## 1. The MCP server (`claude mcp add`)
 
-`claude mcp add nerveplane -- nerveplane mcp` registers Nerveplane's [seven MCP tools](/reference/mcp-tools) the idiomatic way. The spawned stdio server is a thin bridge that proxies to the daemon's REST API, keeping the daemon the single writer.
+`claude mcp add nerveplane -- nerveplane mcp` registers Nerveplane's [eight MCP tools](/reference/mcp-tools) the idiomatic way. The spawned stdio server is a thin bridge that proxies to the daemon's REST API, keeping the daemon the single writer.
 
 - Scope: add `--scope user` (all your projects) or `--scope project` (commit a shared `.mcp.json`); default is local to you.
-- HTTP transport (no stdio bridge): `claude mcp add --transport http nerveplane http://127.0.0.1:7734/mcp` — the same seven tools are served over both transports from one definition.
+- HTTP transport (no stdio bridge): `claude mcp add --transport http nerveplane http://127.0.0.1:7734/mcp` — the same eight tools are served over both transports from one definition.
 
 ## 2. The hooks (`nerveplane install claude-code`)
 
