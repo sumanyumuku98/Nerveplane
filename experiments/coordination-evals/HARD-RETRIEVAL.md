@@ -1,5 +1,8 @@
 # H8 — hard compositional retrieval under dilution (does context engineering rescue *accuracy*?)
 
+> **Result (K=5, frontier Claude + `claude-haiku-4-5`, sizes 10k/50k/100k): H8 NOT supported.** Both models scored **100% both-correct at every size, 0 trap-falls, oracle 1.0**; raw replies match ground truth and vary per seed (genuine multi-hop reasoning). Even a cheap model does correct 3-hop disambiguation over 100k tokens of dilution with three traps. Honest conclusion: routing's value is **cost + capacity/feasibility, not accuracy rescue**. Full table in `results.md`.
+
+
 **Motivation.** The fair dilution sweep (`results.md`) showed that a *single-lookup* fact ("find the CURRENT payments contract → `total`,`currency`") is retrieved correctly by frontier **and** cheap models at every size that fits the window — so scoping/routing was a **cost + capacity** win, not an **accuracy** win. That single-lookup task is too easy: the needle is lexically salient (the query words sit next to the answer), so it's a solved needle-in-a-haystack. This spike removes the three crutches that made retrieval easy and asks whether an *accuracy* gap opens.
 
 ## Hypothesis
