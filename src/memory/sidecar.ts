@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { NERVEPLANE_HOME } from "../config.ts";
-import { resolveEmbedder } from "../config-store.ts";
+import { resolveEmbedder, resolveEmbedderModel, resolveOllamaUrl } from "../config-store.ts";
 
 /**
  * Supervises the mem0 **Node** sidecar (the daemon runs on Bun, which can't load
@@ -59,7 +59,21 @@ export async function ensureSidecar(): Promise<number | null> {
     if (resolveEmbedder() === "none") return warnOnce("no embedder set — run `nerveplane memory setup`; using keyword."), null;
     if (!existsSync(SIDECAR_SCRIPT)) return warnOnce("mem0 sidecar script missing; using keyword."), null;
     try {
-      child = spawn(node, [SIDECAR_SCRIPT], { env: { ...process.env, NP_SIDECAR_PORT: "0", NERVEPLANE_HOME }, stdio: "ignore" });
+      // Propagate the RESOLVED embedder config (env › config.json) into the
+      // sidecar's environment — the choice made via `nerveplane memory setup`
+      // lives in config.json, which the standalone sidecar can't read itself.
+      const model = resolveEmbedderModel();
+      child = spawn(node, [SIDECAR_SCRIPT], {
+        env: {
+          ...process.env,
+          NP_SIDECAR_PORT: "0",
+          NERVEPLANE_HOME,
+          NERVEPLANE_EMBEDDER: resolveEmbedder(),
+          NERVEPLANE_OLLAMA_URL: resolveOllamaUrl(),
+          ...(model ? { NERVEPLANE_EMBEDDER_MODEL: model } : {}),
+        },
+        stdio: "ignore",
+      });
       child.on("exit", () => {
         port = null;
         child = null;
