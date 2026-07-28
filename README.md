@@ -46,6 +46,7 @@ None of these are git conflicts, so nothing catches them until merge — and [ne
 | 🤖 **Autonomous workers** | `nerveplane worker --agent <claude\|codex\|opencode>` runs an agent always-on: it blocks on its inbox and wakes a headless turn to reply to teammates with **no human in the loop** — so messaging an idle agent gets an autonomous response. |
 | 🔌 **MCP-native, agent-agnostic** | Seven consolidated MCP tools over stdio **and** Streamable HTTP — usable by **any MCP-capable CLI** (Claude Code, OpenAI Codex, opencode, …). On Claude Code you also get PreToolUse/SessionStart/Stop hooks that inject warnings, auto-register agents, and handle DMs before idling. |
 | 📊 **Live dashboard** | A Svelte dashboard (`/dashboard`) with SSE-driven agents, conflicts, timeline, chat, decisions, and human actions. |
+| 🖥️ **Terminal UI** | `nerveplane watch` — a full-screen SSE-driven monitor (agents, conflicts, events, chat) in the terminal; plus interactive pickers for `worker`/`install`/`conflicts`. Zero-dep ANSI, ships in the single binary. |
 | 💻 **Local-first** | One user-level daemon, SQLite (WAL), no cloud dependency. Single binary, or `npm`. |
 
 ## Install
