@@ -8,7 +8,8 @@ import { runStopCheck } from "./stop-check.ts";
 import { runWorker } from "./worker.ts";
 import { runDoctor } from "./doctor.ts";
 import { runWatch } from "./watch.ts";
-import { isInteractive, resolveAgent, pickAgent, pickConflict, pickAction } from "./prompt.ts";
+import { isInteractive, resolveAgent, pickAgent, pickConflict, pickAction, pickMemoryMode, pickEmbedder } from "./prompt.ts";
+import { readConfig, writeConfig, resolveMemoryMode, resolveEmbedder, CONFIG_JSON_PATH } from "../config-store.ts";
 import { getProvider, listProviders } from "../agents/index.ts";
 import { ensureOwnerToken, ownerToken } from "../security/owner.ts";
 import { runEvalCli } from "../eval/run.ts";
@@ -48,8 +49,8 @@ Project:
   service uninstall      Remove the daemon service unit
   services               List services and contracts
   dashboard              Open the live web dashboard in your browser
-  memory                 Inspect the shared memory store: recall "<query>" | list
-                         (flags: --repo <id>, --task <id>, --limit <n>)
+  memory                 Shared memory: setup (pick keyword/semantic/hybrid backend),
+                         recall "<query>", list (flags: --repo <id>, --task <id>, --limit <n>)
   watch                  Live full-screen terminal monitor — agents, conflicts,
                          events, chat (same data as the dashboard). alias: monitor; --once
   worker                 Run this worktree's agent as an always-on autonomous
@@ -119,7 +120,7 @@ export async function runCli(argv: string[]): Promise<number> {
         return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
       })();
       process.stdout.write(
-        `nerveplane daemon: running\n  pid:        ${lock.pid}\n  url:        ${url}\n  version:    ${lock.version}\n  uptime:     ${uptime}\n  health:     ${health ? "ok" : "unreachable"}\n  supervised: ${svc.installed ? "yes (login service)" : "no — run `nerveplane service install` to keep it always-on"}\n`,
+        `nerveplane daemon: running\n  pid:        ${lock.pid}\n  url:        ${url}\n  version:    ${lock.version}\n  uptime:     ${uptime}\n  health:     ${health ? "ok" : "unreachable"}\n  memory:     ${(() => { const m = resolveMemoryMode(); return m === "keyword" ? m : `${m} (embedder=${resolveEmbedder()})`; })()}\n  supervised: ${svc.installed ? "yes (login service)" : "no — run `nerveplane service install` to keep it always-on"}\n`,
       );
       return 0;
     }
@@ -475,8 +476,36 @@ export async function runCli(argv: string[]): Promise<number> {
         return i >= 0 ? rest[i + 1] : undefined;
       };
       const sub = rest[0];
+      if (sub === "setup") {
+        const cfg = readConfig();
+        const mode = resolveMemoryMode(cfg);
+        const embedder = resolveEmbedder(cfg);
+        if (!isInteractive()) {
+          process.stdout.write(`nerveplane memory: mode=${mode}${mode !== "keyword" ? ` embedder=${embedder}` : ""} (config: ${CONFIG_JSON_PATH})\n  set interactively on a terminal, or via NERVEPLANE_MEMORY / NERVEPLANE_EMBEDDER.\n`);
+          return 0;
+        }
+        const pickedMode = await pickMemoryMode(mode);
+        if (!pickedMode) return 0;
+        let pickedEmbedder: "openai" | "ollama" | undefined;
+        if (pickedMode !== "keyword") {
+          pickedEmbedder = await pickEmbedder(embedder === "none" ? undefined : embedder);
+          if (!pickedEmbedder) return 0;
+        }
+        writeConfig({ memory: { mode: pickedMode, ...(pickedEmbedder ? { embedder: pickedEmbedder } : {}) } });
+        process.stdout.write(`nerveplane: memory set to ${pickedMode}${pickedEmbedder ? ` (embedder=${pickedEmbedder})` : ""} — saved to ${CONFIG_JSON_PATH}\n`);
+        if (pickedEmbedder === "openai") process.stdout.write("  → set OPENAI_API_KEY in the daemon's environment (the key is not stored in config).\n");
+        if (pickedEmbedder === "ollama") process.stdout.write("  → ensure Ollama is running and `ollama pull nomic-embed-text`.\n");
+        if (pickedMode !== "keyword") process.stdout.write("  → semantic runs a Node sidecar (needs Node on PATH).\n");
+        // Restart the daemon so it picks up the new mode (best-effort).
+        const lock = readLiveLock();
+        if (lock) {
+          process.kill(lock.pid, "SIGTERM");
+          process.stdout.write("  restarted the daemon to apply.\n");
+        }
+        return 0;
+      }
       if (sub !== "recall" && sub !== "list") {
-        process.stderr.write('usage: nerveplane memory <recall "<query>" | list> [--repo <id>] [--task <id>] [--limit <n>]\n');
+        process.stderr.write('usage: nerveplane memory <setup | recall "<query>" | list> [--repo <id>] [--task <id>] [--limit <n>]\n');
         return 1;
       }
       const query = sub === "recall" ? rest.find((a, i) => i > 0 && !a.startsWith("-") && rest[i - 1] !== "--repo" && rest[i - 1] !== "--task" && rest[i - 1] !== "--limit") : undefined;

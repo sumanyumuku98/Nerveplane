@@ -106,14 +106,14 @@ export const coreCtx: ToolCtx = {
     const limit = a.limit as number | undefined;
     switch (a.action) {
       case "recall":
-        return { memories: recall(s(a.query), scope, { limit }) };
+        return { memories: await recall(s(a.query), scope, { limit }) };
       case "list":
-        return { memories: listMemories(scope, { limit }) };
+        return { memories: await listMemories(scope, { limit }) };
       case "forget":
-        return { ok: forget(s(a.id)!) };
+        return { ok: await forget(s(a.id)!) };
       default: // "remember"
         return {
-          memory: remember({
+          memory: await remember({
             authorAgentId: s(a.agent_id),
             kind: s(a.kind) as MemoryKind | undefined,
             title: s(a.title),

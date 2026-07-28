@@ -31,6 +31,7 @@
   },
   "files": [
     "src",
+    "sidecar",
     "drizzle",
     "dashboard/dist",
     "README.md",
@@ -47,9 +48,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun run src/storage/migrate.ts",
-    "build": "bun build --compile --target=bun src/index.ts --outfile dist/nerveplane",
     "build:dashboard": "cd dashboard && vite build",
-    "build:binaries": "bun run build:dashboard && bun run scripts/build-binaries.ts",
     "dev:dashboard": "cd dashboard && vite",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
@@ -77,6 +76,9 @@
     "vite-plugin-singlefile": "2.3.3",
     "vitepress": "1.6.4",
     "vue": "3.5.35"
+  },
+  "optionalDependencies": {
+    "mem0ai": "3.1.0"
   },
   "engines": {
     "bun": ">=1.2.0"

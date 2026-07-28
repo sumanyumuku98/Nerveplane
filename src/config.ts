@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveMemoryMode, resolveEmbedder } from "./config-store.ts";
 
 /**
  * Nerveplane runs as a single user-level daemon spanning all projects
@@ -19,10 +20,15 @@ export const DEFAULT_PORT = Number(process.env.NERVEPLANE_PORT ?? 7734);
 /** Sensitive-content scanning of outbound messages/events: block | warn | off. */
 export const SCAN_MODE = ((m) => (m === "warn" || m === "off" ? m : "block"))(process.env.NERVEPLANE_SCAN);
 
-/** Memory recall engine: keyword (FTS5, default, in-binary, zero-dep) | hybrid (semantic, v2). */
-export const MEMORY_MODE = ((m) => (m === "hybrid" ? "hybrid" : "keyword"))(process.env.NERVEPLANE_MEMORY);
-/** Embedder for the semantic backend (v2 only): none (default) | ollama | openai. */
-export const EMBEDDER = ((e) => (e === "ollama" || e === "openai" ? e : "none"))(process.env.NERVEPLANE_EMBEDDER);
+/**
+ * Memory recall engine: keyword (FTS5, default, zero-config) | semantic (mem0
+ * Node sidecar) | hybrid (both, RRF-fused). Resolved at startup with precedence
+ * env › ~/.nerveplane/config.json › default (see config-store); `nerveplane
+ * memory setup` persists the choice and restarts the daemon to apply.
+ */
+export const MEMORY_MODE = resolveMemoryMode();
+/** Embedder for the semantic sidecar: none (default) | openai | ollama. */
+export const EMBEDDER = resolveEmbedder();
 
 /**
  * Presence. The primary liveness signal is the agent's stdio-bridge process

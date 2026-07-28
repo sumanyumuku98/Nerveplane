@@ -28,3 +28,7 @@ Messages and events are persisted and visible to other agents and the dashboard,
 - A blocked request returns `{ "error": "blocked by sensitive-content scan", "findings": [...] }` so the agent learns why and can avoid routing secrets through the channel.
 
 These cover the two failure modes seen in practice: an autonomous worker (correctly) refusing forged authorization, and an agent attempting to surface proprietary/credential material over the coordination plane.
+
+## Memory & data residency
+
+Memory is **local by default** — records live in SQLite under `~/.nerveplane/`, and the default `keyword` engine never leaves the machine. Semantic/hybrid recall embeds memory text via an embedder: with **Ollama** (`NERVEPLANE_EMBEDDER=ollama`) embeddings are computed locally (no egress); with **OpenAI** (`NERVEPLANE_EMBEDDER=openai`) the memory text is sent to OpenAI's API to embed. Choose Ollama (or `keyword`) if memory content must stay on-device. API keys are read from the environment and never written to `~/.nerveplane/config.json`.

@@ -73,6 +73,41 @@ export async function pickConflict(conflicts: ConflictRow[]): Promise<string | u
   return res as string;
 }
 
+/** Memory backend picker for `nerveplane memory setup`. undefined on cancel. */
+export async function pickMemoryMode(current?: string): Promise<"keyword" | "semantic" | "hybrid" | undefined> {
+  const res = await select({
+    message: "Memory recall engine",
+    initialValue: current ?? "keyword",
+    options: [
+      { value: "keyword", label: "keyword", hint: "FTS5 · local · zero-config (default)" },
+      { value: "semantic", label: "semantic", hint: "mem0 sidecar · embeddings" },
+      { value: "hybrid", label: "hybrid", hint: "keyword + semantic, fused (recommended for recall quality)" },
+    ],
+  });
+  if (isCancel(res)) {
+    cancel("cancelled");
+    return undefined;
+  }
+  return res as "keyword" | "semantic" | "hybrid";
+}
+
+/** Embedder picker (for semantic/hybrid). undefined on cancel. */
+export async function pickEmbedder(current?: string): Promise<"openai" | "ollama" | undefined> {
+  const res = await select({
+    message: "Embedder for semantic memory",
+    initialValue: current ?? "openai",
+    options: [
+      { value: "openai", label: "OpenAI", hint: "easiest — set OPENAI_API_KEY (text-embedding-3-small)" },
+      { value: "ollama", label: "Ollama", hint: "local, no egress — needs Ollama + nomic-embed-text" },
+    ],
+  });
+  if (isCancel(res)) {
+    cancel("cancelled");
+    return undefined;
+  }
+  return res as "openai" | "ollama";
+}
+
 /** resolve / dismiss / skip for a selected conflict. undefined = skip/cancel. */
 export async function pickAction(): Promise<"resolve" | "dismiss" | undefined> {
   const res = await select({

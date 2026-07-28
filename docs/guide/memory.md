@@ -47,10 +47,31 @@ This is what makes cross-CLI continuity work with zero effort.
 
 More coordination cases (duplicated work, repeated gotchas, onboarding, convention propagation) are in the [roadmap](/roadmap).
 
-## Retrieval: keyword now, semantic later
+## Retrieval modes
 
-- **Default — keyword (FTS5/BM25):** zero-config, in-process, ships in the single binary, no API keys, no data egress. Great for the technical vocabulary coding agents use (file paths, symbols, task ids).
-- **Optional — semantic (`NERVEPLANE_MEMORY=hybrid`):** embeddings for fuzzy, cross-vocabulary recall, fused with keyword. Embedder is pluggable via `NERVEPLANE_EMBEDDER` (`ollama` = local, zero egress; `openai` = one key). Records are owned in Nerveplane's own SQLite either way, so enabling semantic never migrates your data.
+One knob (`NERVEPLANE_MEMORY`) picks the recall engine:
+
+| Mode | Engine | Setup |
+|---|---|---|
+| **`keyword`** (default) | FTS5/BM25 in the daemon | none — zero-config, no egress |
+| **`semantic`** | mem0 (embeddings / vector search) | an embedder |
+| **`hybrid`** | keyword **+** semantic, reciprocal-rank-fused | an embedder |
+
+`keyword` is great for the technical vocabulary coding agents use (file paths, symbols, task ids); `semantic` adds fuzzy, cross-vocabulary recall (matches on meaning even with no shared words); `hybrid` fuses both and is the best default for recall quality. **Records are always owned in Nerveplane's own SQLite**, so switching modes never migrates or loses data — and if the semantic engine is unavailable, recall transparently falls back to keyword.
+
+### Set it up — `nerveplane memory setup`
+
+```bash
+nerveplane memory setup     # interactive: pick mode → embedder; saved to ~/.nerveplane/config.json
+```
+
+Precedence is **env var › `~/.nerveplane/config.json` › default `keyword`**, so `NERVEPLANE_MEMORY` / `NERVEPLANE_EMBEDDER` still override for CI/scripts. `nerveplane status` shows the active backend.
+
+**Lightest setup (OpenAI):** `NERVEPLANE_EMBEDDER=openai` + `OPENAI_API_KEY` — one variable, no external database. **No-cloud (Ollama):** `NERVEPLANE_EMBEDDER=ollama` after `ollama pull nomic-embed-text` — nothing leaves your machine.
+
+### How semantic runs — the mem0 sidecar
+
+mem0's engine depends on a native module that doesn't load under Bun (which the daemon runs on), so semantic memory runs in a small **Node sidecar** the daemon spawns and talks to over `127.0.0.1`. This is why `npm i -g nerveplane` (which brings Node) is the install path. The sidecar stores its vector index in a SQLite file under `~/.nerveplane/`, so it's **local and persistent** — no external vector database, and semantic recall survives restarts without re-embedding. We hand mem0 only the memory text + our id (`infer:false`, no LLM extraction); the daemon's SQLite stays the source of truth.
 
 ## Privacy
 

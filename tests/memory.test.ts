@@ -6,7 +6,7 @@ import { getDb } from "../src/storage/db.ts";
 import { runMigrations } from "../src/storage/migrate.ts";
 import { registerAgent } from "../src/core/registry.ts";
 import { remember, recall, listMemories, forget } from "../src/core/memory.ts";
-import { toMatchExpr, semanticBackend } from "../src/memory/backend.ts";
+import { toMatchExpr } from "../src/memory/backend.ts";
 import { coreCtx } from "../src/mcp/core-ctx.ts";
 import { formatSessionContext } from "../src/cli/session-start.ts";
 import { buildWorkerPrompt } from "../src/cli/worker.ts";
@@ -20,10 +20,6 @@ test("toMatchExpr tokenizes to a safe OR-of-quoted-terms and drops operators", (
   expect(toMatchExpr("payment retries")).toBe('"payment" OR "retries"');
   expect(toMatchExpr('AuthClient "OR" *')).toBe('"authclient" OR "or"'); // lowercased, quotes/stars stripped
   expect(toMatchExpr("   ")).toBe("");
-});
-
-test("semantic backend is a clear stub until v2", () => {
-  expect(() => semanticBackend.recall("q", {})).toThrow(/not implemented/);
 });
 
 test("formatSessionContext is byte-identical with no memories (golden guard)", () => {
@@ -47,20 +43,20 @@ test("buildWorkerPrompt injects memory only when present", () => {
 });
 
 // ---------------- Integration (through core + storage + FTS) ----------------
-test("round-trip: remember → recall (FTS) → forget", () => {
-  const rec = remember({ authorAgentId: "ag_a", kind: "fact", title: "auth pattern", body: "auth goes through src/lib/authClient, do not roll your own", repoId: "repoRT" });
-  const hits = recall("auth", { repoId: "repoRT" });
+test("round-trip: remember → recall (FTS) → forget", async () => {
+  const rec = await remember({ authorAgentId: "ag_a", kind: "fact", title: "auth pattern", body: "auth goes through src/lib/authClient, do not roll your own", repoId: "repoRT" });
+  const hits = await recall("auth", { repoId: "repoRT" });
   expect(hits.map((h) => h.id)).toContain(rec.id);
   // a non-matching query in-scope returns nothing for this term
-  expect(recall("kubernetes", { repoId: "repoRT" }).length).toBe(0);
-  expect(forget(rec.id)).toBe(true);
-  expect(recall("auth", { repoId: "repoRT" }).length).toBe(0);
+  expect((await recall("kubernetes", { repoId: "repoRT" })).length).toBe(0);
+  expect(await forget(rec.id)).toBe(true);
+  expect((await recall("auth", { repoId: "repoRT" })).length).toBe(0);
 });
 
-test("FTS ranks the keyword hit above a non-match, scoped", () => {
-  remember({ body: "the deploy pipeline tags a release and publishes to npm", repoId: "repoRank" });
-  remember({ body: "auth tokens use a 15 minute JWT expiry", repoId: "repoRank" });
-  const hits = recall("deploy release", { repoId: "repoRank" });
+test("FTS ranks the keyword hit above a non-match, scoped", async () => {
+  await remember({ body: "the deploy pipeline tags a release and publishes to npm", repoId: "repoRank" });
+  await remember({ body: "auth tokens use a 15 minute JWT expiry", repoId: "repoRank" });
+  const hits = await recall("deploy release", { repoId: "repoRank" });
   expect(hits.length).toBeGreaterThan(0);
   expect(hits[0]!.body).toContain("deploy");
 });
@@ -74,17 +70,17 @@ test("multi-agent scope isolation: repo-scoped memory recalls for same-repo agen
   expect(a.repoId).toBe(b.repoId);
   expect(a.repoId).not.toBe(c.repoId);
 
-  remember({ authorAgentId: a.id, kind: "fact", body: "shared: main is in feature freeze this week", repoId: a.repoId! });
+  await remember({ authorAgentId: a.id, kind: "fact", body: "shared: main is in feature freeze this week", repoId: a.repoId! });
   // B (same repo) sees it; C (different repo) does not
-  expect(listMemories({ repoId: b.repoId! }).some((m) => m.body.includes("feature freeze"))).toBe(true);
-  expect(listMemories({ repoId: c.repoId! }).some((m) => m.body.includes("feature freeze"))).toBe(false);
+  expect((await listMemories({ repoId: b.repoId! })).some((m) => m.body.includes("feature freeze"))).toBe(true);
+  expect((await listMemories({ repoId: c.repoId! })).some((m) => m.body.includes("feature freeze"))).toBe(false);
 });
 
-test("kind + task scoping filters recall", () => {
-  remember({ kind: "episode", body: "progress: finished handler", repoId: "repoK", taskId: "T1" });
-  remember({ kind: "fact", body: "fact: retries double-fire on 500", repoId: "repoK", taskId: "T1" });
-  expect(listMemories({ repoId: "repoK", kind: "episode" }).every((m) => m.kind === "episode")).toBe(true);
-  expect(listMemories({ repoId: "repoK", taskId: "T2" }).length).toBe(0);
+test("kind + task scoping filters recall", async () => {
+  await remember({ kind: "episode", body: "progress: finished handler", repoId: "repoK", taskId: "T1" });
+  await remember({ kind: "fact", body: "fact: retries double-fire on 500", repoId: "repoK", taskId: "T1" });
+  expect((await listMemories({ repoId: "repoK", kind: "episode" })).every((m) => m.kind === "episode")).toBe(true);
+  expect((await listMemories({ repoId: "repoK", taskId: "T2" })).length).toBe(0);
 });
 
 test("memory MCP tool round-trips through coreCtx (real daemon tool path)", async () => {
@@ -96,7 +92,7 @@ test("memory MCP tool round-trips through coreCtx (real daemon tool path)", asyn
 test("cross-CLI continuity: an episode written by one agent resumes another (any CLI)", async () => {
   const REPO = mkdtempSync(join(tmpdir(), "np-cont-"));
   const claude = await registerAgent({ name: "claude", repoPath: REPO, worktreePath: REPO + "/wt" });
-  remember({
+  await remember({
     authorAgentId: claude.id,
     kind: "episode",
     taskId: "payments",
@@ -105,7 +101,7 @@ test("cross-CLI continuity: an episode written by one agent resumes another (any
   });
 
   // A fresh agent's SessionStart recall (author/CLI-agnostic — read by repo).
-  const recalled = recall(undefined, { repoId: claude.repoId! });
+  const recalled = await recall(undefined, { repoId: claude.repoId! });
   const ctx = formatSessionContext("codex-worker", [], recalled);
   expect(ctx).toContain("▶ Resume:");
   expect(ctx).toContain("idempotency keys");
@@ -115,9 +111,9 @@ test("cross-CLI continuity: an episode written by one agent resumes another (any
   expect(prompt).toContain("Stripe retries double-fire");
 });
 
-test("pinned memories are boosted in recall order", () => {
-  remember({ body: "ordinary note one", repoId: "repoPin" });
-  remember({ body: "ordinary note two", repoId: "repoPin" });
-  remember({ body: "pinned convention: use vitest in web", repoId: "repoPin", pinned: true });
-  expect(listMemories({ repoId: "repoPin" })[0]!.body).toContain("pinned convention");
+test("pinned memories are boosted in recall order", async () => {
+  await remember({ body: "ordinary note one", repoId: "repoPin" });
+  await remember({ body: "ordinary note two", repoId: "repoPin" });
+  await remember({ body: "pinned convention: use vitest in web", repoId: "repoPin", pinned: true });
+  expect((await listMemories({ repoId: "repoPin" }))[0]!.body).toContain("pinned convention");
 });

@@ -42,31 +42,21 @@ None of these are git conflicts, so nothing catches them until merge — and [ne
 | ⚔️ **Conflict detection** | Same-file (high) and same-package (medium) collisions between agents, routed to exactly the pair involved, with a conservative, dismissible noise budget. |
 | 🔗 **Contract-aware cross-repo routing** | Change an OpenAPI / GraphQL / AsyncAPI / protobuf contract and consumer-repo agents (direct, transitive, and test owners) get warned about the breaking change — across repo boundaries. |
 | 📒 **Decision ledger** | Durable project decisions live separately from chat and are queryable by file, repo, service, or task. |
-| 🧠 **Universal memory** | A shared, durable memory across agents **and CLIs**: `remember` gotchas/decisions/progress, `recall` them (auto-injected at session start + into worker turns). One agent's context resumes on another — even a different CLI. Keyword (FTS5) local by default; semantic pluggable. |
+| 🧠 **Universal memory** | A shared, durable memory across agents **and CLIs**: `remember` gotchas/decisions/progress, `recall` them (auto-injected at session start + into worker turns). One agent's context resumes on another — even a different CLI. Three modes via `nerveplane memory setup`: **keyword** (FTS5, local, default), **semantic** (mem0 sidecar), **hybrid** (fused). |
 | 💬 **Direct agent-to-agent chat** | A first-class `chat` tool: threaded DMs between agents with **real-time delivery** — an agent can `wait` (block) for a reply, and incoming messages are injected before a teammate's next edit. |
 | 🤖 **Autonomous workers** | `nerveplane worker --agent <claude\|codex\|opencode>` runs an agent always-on: it blocks on its inbox and wakes a headless turn to reply to teammates with **no human in the loop** — so messaging an idle agent gets an autonomous response. |
 | 🔌 **MCP-native, agent-agnostic** | Eight consolidated MCP tools over stdio **and** Streamable HTTP — usable by **any MCP-capable CLI** (Claude Code, OpenAI Codex, opencode, …). On Claude Code you also get PreToolUse/SessionStart/Stop hooks that inject warnings, auto-register agents, and handle DMs before idling. |
 | 📊 **Live dashboard** | A Svelte dashboard (`/dashboard`) with SSE-driven agents, conflicts, timeline, chat, decisions, and human actions. |
 | 🖥️ **Terminal UI** | `nerveplane watch` — a full-screen SSE-driven monitor (agents, conflicts, events, chat) in the terminal; plus interactive pickers for `worker`/`install`/`conflicts`. Zero-dep ANSI, ships in the single binary. |
-| 💻 **Local-first** | One user-level daemon, SQLite (WAL), no cloud dependency. Single binary, or `npm`. |
+| 💻 **Local-first** | One user-level daemon, SQLite (WAL), no cloud dependency by default. Installed via `npm`. |
 
 ## Install
 
-The binary installs bundle the runtime — **no Bun required**.
-
 ```bash
-# Homebrew (macOS / Linux)
-brew install sumanyumuku98/nerveplane/nerveplane
-
-# Shell (macOS / Linux, arm64 & x64)
-curl -fsSL https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.sh | sh
-
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.ps1 | iex
-
-# npm (any OS; requires Bun ≥ 1.2)
-npm i -g nerveplane
+npm i -g nerveplane      # requires Bun ≥ 1.2 (the runtime) and Node (for optional semantic memory)
 ```
+
+> Nerveplane ships via **npm**. The CLI runs on Bun; Node is used only by the optional mem0 semantic-memory sidecar ([Memory guide](https://sumanyumuku98.github.io/Nerveplane/guide/memory)). Since `npm` already brings Node, everything you need is present.
 
 ## Quickstart
 

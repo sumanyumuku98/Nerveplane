@@ -290,14 +290,14 @@ export function buildApi(): Hono {
     const limit = b.limit as number | undefined;
     switch (b.action) {
       case "recall":
-        return c.json({ memories: recall(b.query, scope, { limit }) });
+        return c.json({ memories: await recall(b.query, scope, { limit }) });
       case "list":
-        return c.json({ memories: listMemories(scope, { limit }) });
+        return c.json({ memories: await listMemories(scope, { limit }) });
       case "forget":
-        return c.json({ ok: forget(b.id) });
+        return c.json({ ok: await forget(b.id) });
       case "remember":
         return c.json({
-          memory: remember({
+          memory: await remember({
             authorAgentId: b.agent_id ?? b.authorAgentId,
             kind: b.kind as MemoryKind | undefined,
             title: b.title,

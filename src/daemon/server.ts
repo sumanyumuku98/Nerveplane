@@ -3,7 +3,8 @@ import { runMigrations } from "../storage/migrate.ts";
 import { startPresenceSweeper } from "../core/presence.ts";
 import { startSensing } from "../repo/sensing.ts";
 import { ensureHome, writeLock, clearLock, readLiveLock } from "./lock.ts";
-import { HOST, DEFAULT_PORT } from "../config.ts";
+import { ensureSidecar, stopSidecar } from "../memory/sidecar.ts";
+import { HOST, DEFAULT_PORT, MEMORY_MODE } from "../config.ts";
 import pkg from "../../package.json" with { type: "json" };
 
 export interface DaemonHandle {
@@ -42,12 +43,18 @@ export async function startDaemon(port: number = DEFAULT_PORT): Promise<DaemonHa
   const stopSweeper = startPresenceSweeper();
   const stopSensing = startSensing();
 
+  // Warm the mem0 sidecar when semantic/hybrid memory is configured (lazy anyway,
+  // but this surfaces config issues at boot). Fire-and-forget; failures fall back
+  // to keyword and never block daemon startup.
+  if (MEMORY_MODE !== "keyword") void ensureSidecar();
+
   let stopped = false;
   const stop = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
     stopSweeper();
     stopSensing();
+    stopSidecar();
     await server.stop();
     clearLock();
   };

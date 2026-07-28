@@ -1,6 +1,7 @@
 import { api, baseUrl, ensureDaemon } from "../daemon/client.ts";
 import { readLiveLock } from "../daemon/lock.ts";
 import { HOST, DEFAULT_PORT } from "../config.ts";
+import { resolveMemoryMode } from "../config-store.ts";
 import { bold, cyan, dim, gray, screen, severityColor, statusColor, truncate } from "../tui/ansi.ts";
 
 /**
@@ -141,7 +142,7 @@ export function renderLines(state: WatchState, now = Date.now()): string[] {
   const lines: string[] = [];
   const rule = () => lines.push(dim("─".repeat(w)));
 
-  lines.push(bold(cyan("nerveplane watch")) + dim(`  ${state.url}${state.version ? `  v${state.version}` : ""}${state.uptime ? `  up ${state.uptime}` : ""}`));
+  lines.push(bold(cyan("nerveplane watch")) + dim(`  ${state.url}${state.version ? `  v${state.version}` : ""}${state.uptime ? `  up ${state.uptime}` : ""}  mem:${resolveMemoryMode()}`));
   rule();
 
   lines.push(bold(`AGENTS (${state.agents.length})`));
