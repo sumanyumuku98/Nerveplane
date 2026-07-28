@@ -46,6 +46,11 @@ bun run experiments/coordination-evals/live.ts    # Tier B (needs a real agent +
 ## Results
 See [`results.md`](./results.md). Tier-A headline (deterministic; `run.ts` regenerates this file): **CTSR 1/4 → 4/4**, merge conflicts **1 → 0**, wasted LOC **5 → 0**, routing **100% hit / 0% false**, independent control **no harm**.
 
-**Tier-B (live, frontier Claude):**
-- **Positional lost-in-the-middle: null** — 100% recall at every position; frontier models resist the classic dip. *Do not present a lost-in-the-middle slide.*
-- **Current-decision adherence under stale/recency distraction (the honest reframe of H7):** with the current decision buried under a stale+recent distractor, dump = **70%** vs Nerveplane routed = **100%** (K=20; ~30% lift; Fisher p≈0.02). Maps onto the decision-ledger(supersede) + JIT-routing value; expected to widen on cheaper models.
+**Tier-B (live, frontier Claude) — H7 "context-rescue" NOT supported (honest):**
+- **Positional lost-in-the-middle: null** (100% at every position).
+- **Superseded decision: RETRACTED** — the earlier 70% was a scorer artifact (regex false-flagged correct replies); Haiku=100% + a structured re-check contradict it.
+- **Context dilution — fair size sweep (10k/50k/100k/200k tokens, contract buried ~50% among 4 hard negatives, K=5):**
+  - *Accuracy dilution NOT observed* — frontier correct at every size (incl. ~280k real tokens); Haiku correct at 10k/50k/100k.
+  - *Capacity ceiling IS real* — the single-agent prompt (~280k tokens) **overflows Haiku's 200k window (0/5, can't run)**; Nerveplane's routed context is ~155 tokens, always in-window.
+  - *Cost win is large & always-true* — routed ~155 tok vs 10k–200k dumped = **68×–1296×** less context per task.
+- **Conclusion:** frontier models resist these context stressors at the scales tested, so per-repo scoping + routing is a **cost + capacity/feasibility** win, **not an accuracy-rescue** win. Present the **Tier-A** results + this cost/capacity framing, not an H7 accuracy slide. See the sweep + CORRECTION in `results.md`.

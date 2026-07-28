@@ -40,6 +40,8 @@ Live run — agent=claude (Claude Code 2.1.170), K=5 seeds, 200-note dump (~10�
 
 ## Tier-B (frontier) — recreating the failure via a SUPERSEDED decision
 
+> ⚠️ **RETRACTED — see the CORRECTION section below.** The 70% figure here was a **scorer artifact** (a regex that false-flagged correct replies). Do not cite it.
+
 The pure positional dip doesn't appear on frontier models, so we tested the realistic failure they *do* exhibit: a **superseded decision under distraction + recency**. The current decision is buried mid-history; a stale decision sits early and a plausible distractor reinforcing it sits at the recency edge; hard-negative auth notes add interference. Live — agent=claude (frontier):
 
 | experiment | dump (history in context) | Nerveplane routed | n |
@@ -50,3 +52,41 @@ The pure positional dip doesn't appear on frontier models, so we tested the real
 **Finding (frontier, K=20):** with the current decision buried and a stale+recent distractor pulling the other way, frontier Claude picked the **wrong (deprecated) auth in 6/20 runs (70% adherence)**; routing the *current* decision fixed it (**20/20, 100%**). ≈30% absolute lift; Fisher exact 14/20 vs 20/20 ≈ **p≈0.02** — directionally strong and significant at this n. The model isn't rescued from *position*; it's handed the authoritative current fact instead of a history where the update is buried and a wrong note is recent — exactly Nerveplane's decision-ledger(supersede) + JIT-routing value.
 
 **Honest framing:** reframe H7 from "lost-in-the-middle" (which frontier models resist — 100% positional recall above) to **"current-decision adherence under stale/recency distraction."** That's the claim that survives on frontier models. Expect the gap to widen further on cheaper models (`NP_EVAL_MODEL`) and larger contexts; a bigger n + a model sweep would harden it further.
+
+---
+
+## CORRECTION — consolidated H7 findings (integrity)
+
+After more runs (incl. a structured-output scorer + raw-reply logging), the H7 "context-rescue" claims do **not** hold up on frontier models at the scales tested. Correcting the record:
+
+| variant | finding (frontier Claude) | status |
+|---|---|---|
+| positional lost-in-the-middle | 100% at every position | null (frontier resists) |
+| **superseded decision** | earlier "70% dump" was a **scorer artifact** (`!/express-session/` false-flagged *correct* "use authClient, NOT express-session" replies); Haiku=100% + structured re-check contradict it | **RETRACTED** |
+| context dilution (single agent, all repos vs scoped+routed) | both 100% correct (raw replies: `["total","currency"]`) at 6-repo scale | null at this scale |
+
+**Honest takeaways:**
+1. Frontier models are robust to these context stressors at modest scale → **do not present an H7 "context-rescue" slide.** The earlier 70%→100% supersede number is retracted (measurement artifact).
+2. Lesson: **score structured output + log raw replies** — regex-on-prose negation caused a false effect. `live.ts` now does both.
+3. The **defensible** claims remain: (a) **context efficiency** — scoping/routing delivers far fewer tokens than dumping N repos (magnitude only becomes compelling with realistic large-repo fixtures); (b) the **Tier-A coordination outcomes** (CTSR 1/4→4/4, conflicts 1→0, routing 100%/0%) which don't rely on context effects.
+4. To properly test dilution/degradation: realistic large-repo fixtures (tens of thousands of tokens) and/or weaker/cheaper models, pre-registered scale — future work, not to be reverse-engineered into a win.
+
+---
+
+## Context dilution — the FAIR test (size sweep, both models)
+
+The earlier 6-repo dilution (~hundreds of tokens) was **not a fair test** — it can't dilute a 200k–1M window. Rebuilt as a size-swept generator: a single agent must retrieve the **CURRENT** payments invoice contract (`total`,`currency`), buried at **~50% depth** among **4 hard-negative money shapes** (`amount` / `grossValue`+`tax` / `subtotal`+`vat` / `netAmount`+`fx`) in a codebase filled to a target token budget. Nerveplane's condition = its own repo + **one routed fact** (~155 tokens, size-invariant). Structured JSON scoring, K=5, raw replies logged. `agent=claude` (frontier = default 1M-window model; Haiku = `claude-haiku-4-5`).
+
+| single-agent context | frontier Claude | Haiku (200k window) | Nerveplane routed | single-agent size vs routed |
+|---|---|---|---|---|
+| ~10k tok | 100% correct | 100% correct | 100% | 68× |
+| ~50k tok | 100% correct | 100% correct | 100% | 326× |
+| ~100k tok | 100% correct | 100% correct | 100% | 650× |
+| ~200k tok (≈280k real) | 100% correct | **OVERFLOW — 0/5, can't run** | 100% | 1296× |
+
+**Honest findings:**
+1. **Accuracy dilution NOT observed.** While the diluted context *fits*, both frontier and the cheap model pick the CURRENT contract over 4 hard negatives — up to 100k for both, up to ~280k real tokens for the frontier model. The "context rot degrades correctness" hypothesis is **not supported** at these scales/this task. Do not claim an accuracy rescue.
+2. **Capacity ceiling IS real for smaller-window models.** The single-agent "hold the whole microservices world" prompt is ~280k real tokens; Haiku's 200k window **rejects it outright (5/5 overflow)** — single-agent is simply *infeasible*. Per-repo scoping keeps every agent ~155 tokens → always in-window. (Harness now counts overflow separately from wrong answers.)
+3. **Cost/efficiency is the large, always-true win.** Routing delivers the one needed fact in **~155 tokens vs 10k–200k dumped = 68×–1296× less context per task**, per agent, every task — even when the big-context model succeeds, it burned ~280k input tokens to answer what routing answered in ~155.
+
+**Honest reframe of the "context engineering" thesis (the leadership line):** at current frontier scales, per-repo scoping + routing is a **cost + capacity/feasibility** win, **not an accuracy-rescue** win. The multi-agent-per-repo argument is *not* "a frontier model can't find the fact in a big context" (it can) — it's "each agent stays cheap and within-window, while a single agent carrying everything is 2–3 orders of magnitude more expensive and, on smaller-window models, eventually **cannot fit at all**." Quantified, reproducible, and honest about what we did not find.
