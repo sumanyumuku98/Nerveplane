@@ -90,3 +90,21 @@ The earlier 6-repo dilution (~hundreds of tokens) was **not a fair test** — it
 3. **Cost/efficiency is the large, always-true win.** Routing delivers the one needed fact in **~155 tokens vs 10k–200k dumped = 68×–1296× less context per task**, per agent, every task — even when the big-context model succeeds, it burned ~280k input tokens to answer what routing answered in ~155.
 
 **Honest reframe of the "context engineering" thesis (the leadership line):** at current frontier scales, per-repo scoping + routing is a **cost + capacity/feasibility** win, **not an accuracy-rescue** win. The multi-agent-per-repo argument is *not* "a frontier model can't find the fact in a big context" (it can) — it's "each agent stays cheap and within-window, while a single agent carrying everything is 2–3 orders of magnitude more expensive and, on smaller-window models, eventually **cannot fit at all**." Quantified, reproducible, and honest about what we did not find.
+
+---
+
+## H8 — HARD compositional retrieval under dilution (does routing rescue *accuracy*?)
+
+The single-lookup task above was too easy (lexically salient needle). H8 removes the crutches (design: `HARD-RETRIEVAL.md`): the answer is a **join of 3 facts** at different depths, with **low lexical overlap** to the query, where the authoritative contract is chosen by a **rule** (highest `rev` with `state: active`), not a "CURRENT" label. Per-seed randomised answers (no priors), 3 named traps (retired-but-higher-rev contract / wrong region / deprecated fx map). Structured scoring + raw-reply audit; K=5; sizes chosen to fit both windows. `C_routed` (pre-joined facts) is the solvability gate.
+
+| single-agent context | frontier Claude | Haiku (`claude-haiku-4-5`) | routed/oracle |
+|---|---|---|---|
+| ~10k tok | 100% both-correct | 100% both-correct | 100% |
+| ~50k tok | 100% both-correct | 100% both-correct | 100% |
+| ~100k tok | 100% both-correct | 100% both-correct | 100% |
+
+Trap-fall rate = 0 across the board; parse-fail = 0; oracle = 1.0 (task is genuinely solvable). Raw replies confirm answers **match ground truth and vary per seed** (e.g. Haiku@100k: `netPayable/BRL`, `netPayable/SGD`, `balanceOwed/JPY`, `netPayable/EUR`) — genuine multi-hop reasoning, not a prior.
+
+**Finding: H8 NOT supported — a robust, well-tested negative.** Even a *cheap* model does correct 3-hop disambiguation-by-rule over 100k tokens of dilution with three traps. We removed every crutch and modern models still don't lose *accuracy* to dilution at window-fitting scales. This strengthens (does not weaken) the honest thesis: **the value of per-repo scoping + routing is cost + capacity/feasibility, not accuracy rescue.** Presenting the cost/capacity numbers + the proven Tier-A coordination outcomes is the credible pitch — precisely because we tried hard to find an accuracy win and reported that we couldn't.
+
+*(Where an accuracy gap would plausibly appear: contexts beyond the reliable window (≫200k, where overflow/capacity already bites), tasks needing aggregation over *many* buried instances rather than a fixed-arity join, or much weaker/older models. Out of scope here; flagged as honest future work, not reverse-engineered into a win.)*
