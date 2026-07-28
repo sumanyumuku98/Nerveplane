@@ -17,7 +17,9 @@
  */
 import { getProvider, listProviders } from "../../src/agents/index.ts";
 
-const CRITICAL_FACT = "IMPORTANT: authentication is centralized in src/lib/authClient.ts — never implement your own auth; import from there.";
+// Phrased to BLEND IN with the distractor notes (same "- event N:" shape) — a
+// shouty "IMPORTANT:" prefix defeats the test by making the fact trivially salient.
+const CRITICAL_FACT = "- event 101: auth was centralized into src/lib/authClient — teams should import getAuth from there instead of rolling their own.";
 // Lost-in-the-middle needs a substantial context to manifest, so model a realistic
 // busy-team coordination history: NP_EVAL_DISTRACTORS notes (default 200), each a
 // full sentence, ≈8–12k tokens total. Tune via env.
@@ -54,9 +56,34 @@ function requireLiveEnv(): { agent: string } | null {
   return ready ? { agent } : null;
 }
 
+/**
+ * Frontier-capable stressor: a SUPERSEDED decision under distraction + recency.
+ * Frontier models resist the classic positional dip but still anchor on a stale
+ * or recent instruction when the real update is buried among similar notes.
+ * Maps onto Nerveplane's decision-ledger(supersede) + JIT routing.
+ */
+function supersedeDumpPrompt(): string {
+  const notes = [...DISTRACTORS];
+  // OLD decision early; the UPDATE that supersedes it buried mid; hard negatives;
+  // a recency distractor reinforcing the OLD choice near the end.
+  notes.splice(2, 0, "- event 2: DECISION — auth will use the express-session middleware in server.ts.");
+  notes.splice(Math.floor(notes.length / 2), 0, "- event 77: DECISION UPDATE — auth is now centralized in src/lib/authClient; express-session is deprecated, do not use it.");
+  notes.splice(Math.floor(notes.length * 0.7), 0, "- event 120: sessionHelper in src/legacy/oldAuth was tidied up (lint only).");
+  notes.push("- event 199: reminder — session setup and middleware wiring live in server.ts; check there when adding endpoints.");
+  return `You are one of several coding agents. Team coordination history:\n${notes.join("\n")}\n\nTask: add a login handler. Reply with ONLY the module path you will import for authentication.`;
+}
+function supersedeRoutedPrompt(): string {
+  return "You are one of several coding agents.\n📓 Current decision (supersedes earlier notes): auth is centralized in src/lib/authClient; express-session is deprecated.\n\nTask: add a login handler. Reply with ONLY the module path you will import for authentication.";
+}
+// adhered = chose the CURRENT decision (authClient) and not the superseded/stale one
+function adheredSupersede(reply: string): boolean {
+  return /authClient/i.test(reply) && !/express-session/i.test(reply);
+}
+
 async function runTurn(agentId: string, prompt: string): Promise<string> {
   const provider = getProvider(agentId);
-  const args = provider.headlessArgs(prompt, {});
+  const model = process.env.NP_EVAL_MODEL;
+  const args = provider.headlessArgs(prompt, model ? { model } : {});
   const proc = Bun.spawn([provider.bin, ...args], { stdout: "pipe", stderr: "pipe" });
   const out = await new Response(proc.stdout).text();
   await proc.exited;
@@ -83,20 +110,43 @@ async function main() {
   }
 
   const K = Number(process.env.NP_EVAL_SEEDS ?? 5);
+  const mode = process.env.NP_EVAL_MODE ?? "all"; // all | positional | supersede
   const positions = ["start", "middle", "end"] as const;
   const dump: Record<string, number> = {};
-  for (const pos of positions) {
-    let hits = 0;
-    for (let k = 0; k < K; k++) if (adhered(await runTurn(env.agent, dumpPrompt(pos)))) hits++;
-    dump[pos] = hits / K;
-  }
   let routedHits = 0;
-  for (let k = 0; k < K; k++) if (adhered(await runTurn(env.agent, routedPrompt()))) routedHits++;
+  if (mode !== "supersede") {
+    for (const pos of positions) {
+      let hits = 0;
+      for (let k = 0; k < K; k++) if (adhered(await runTurn(env.agent, dumpPrompt(pos)))) hits++;
+      dump[pos] = hits / K;
+    }
+    for (let k = 0; k < K; k++) if (adhered(await runTurn(env.agent, routedPrompt()))) routedHits++;
+  }
+
+  // Frontier-capable stressor: superseded decision under distraction + recency.
+  let ssDump = 0;
+  let ssRouted = 0;
+  if (mode !== "positional") {
+    for (let k = 0; k < K; k++) {
+      if (adheredSupersede(await runTurn(env.agent, supersedeDumpPrompt()))) ssDump++;
+      if (adheredSupersede(await runTurn(env.agent, supersedeRoutedPrompt()))) ssRouted++;
+    }
+  }
 
   process.stdout.write(
-    "\n## Lost-in-the-middle (H7) — critical-fact adherence\n" +
-      JSON.stringify({ agent: env.agent, seeds: K, dump_by_position: dump, nerveplane_routed: routedHits / K }, null, 2) +
-      "\n\nExpect: dump shows the U-shaped dip (middle lowest); routed stays high + position-invariant.\n",
+    "\n## H7 — context adherence (agent=" +
+      env.agent +
+      (process.env.NP_EVAL_MODEL ? `, model=${process.env.NP_EVAL_MODEL}` : "") +
+      `, seeds=${K})\n` +
+      JSON.stringify(
+        {
+          positional_recall: { dump_by_position: dump, nerveplane_routed: routedHits / K },
+          superseded_decision: { dump: ssDump / K, nerveplane_routed: ssRouted / K },
+        },
+        null,
+        2,
+      ) +
+      "\n\npositional: dump vs routed (frontier models resist the dip). superseded: dump buries the UPDATE with a stale+recent distractor — frontier models can anchor on the wrong one; routed delivers the current decision.\n",
   );
 }
 
