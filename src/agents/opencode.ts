@@ -20,18 +20,38 @@ export function opencodeHeadlessArgs(prompt: string, opts: HeadlessOptions): str
   return args;
 }
 
+/** opencode `run --format json` emits a JSONL event stream; the assistant reply
+ *  is the last event whose `part.type === "text"` (`part.text`), and the session
+ *  id is top-level `sessionID`. Falls back to flat result/text/message/parts
+ *  fields (older/single-object shapes), then raw stdout. */
 export function opencodeParseResult(stdout: string): { result?: string; sessionId?: string } {
-  try {
-    const j = JSON.parse(stdout) as Record<string, unknown>;
-    const result =
-      (j.result as string) ??
-      (j.text as string) ??
-      (typeof j.message === "string" ? (j.message as string) : undefined) ??
-      (Array.isArray(j.parts) ? (j.parts as { text?: string }[]).map((p) => p.text ?? "").join("") : undefined);
-    return { result: result && result.trim() ? result : stdout.trim(), sessionId: (j.sessionId ?? j.session_id) as string | undefined };
-  } catch {
-    return { result: stdout.trim() || undefined };
+  const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
+  let text: string | undefined; // preferred: part.type === "text"
+  let flat: string | undefined; // fallback: flat result/text/message/parts
+  let sessionId: string | undefined;
+  for (const line of stdout.split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("{")) continue;
+    try {
+      const ev = JSON.parse(t) as Record<string, any>;
+      sessionId = str(ev.sessionID) ?? str(ev.sessionId) ?? str(ev.session_id) ?? sessionId;
+      const part = ev.part as Record<string, unknown> | undefined;
+      if (part && part.type === "text") {
+        const x = str(part.text);
+        if (x) text = x;
+      }
+      const f =
+        str(ev.result) ??
+        str(ev.text) ??
+        str(ev.message) ??
+        (Array.isArray(ev.parts) ? str((ev.parts as { text?: string }[]).map((p) => p.text ?? "").join("")) : undefined);
+      if (f) flat = f;
+    } catch {
+      /* skip non-JSON lines */
+    }
   }
+  const result = text ?? flat ?? (stdout.trim() || undefined);
+  return { result, sessionId };
 }
 
 export const opencode: AgentProvider = {

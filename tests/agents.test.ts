@@ -57,6 +57,13 @@ test("parseResult extracts result + sessionId per provider", () => {
     '{"type":"item.completed","item":{"id":"item_0","type":"mcp_tool_call","tool":"discover","status":"completed"}}\n' +
     '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"FOUND 2"}}\n';
   expect(getProvider("codex").parseResult(codexStream)).toEqual({ result: "FOUND 2", sessionId: "c1" });
+  // opencode run --format json: JSONL; reply is part.type "text" → part.text; session id top-level sessionID
+  const ocStream =
+    '{"type":"step_start","part":{"type":"step-start"},"sessionID":"o1"}\n' +
+    '{"type":"tool_use","part":{"type":"tool","tool":"nerveplane_discover","state":{"status":"completed"}},"sessionID":"o1"}\n' +
+    '{"type":"text","part":{"type":"text","text":"FOUND 2"},"sessionID":"o1"}\n';
+  expect(getProvider("opencode").parseResult(ocStream)).toEqual({ result: "FOUND 2", sessionId: "o1" });
+  // legacy single-object shape still handled
   expect(getProvider("opencode").parseResult('{"result":"pong","sessionId":"o1"}')).toEqual({ result: "pong", sessionId: "o1" });
   // tolerant fallbacks
   expect(getProvider("claude").parseResult("not json").result).toBeUndefined();
