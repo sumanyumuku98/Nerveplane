@@ -15,7 +15,9 @@ This document is written so **any agent (or contributor) can pick up the next ph
 | M6 Distribution — Homebrew tap, Windows/linux-arm64 binaries, install matrix | ✅ |
 | M7 Hardening — AsyncAPI + protobuf diff, runnable demos, hook test, dogfooding | ✅ |
 | **M8 Deeper repo intelligence** | ⬜ future |
-| **M9 Team / distributed mode + security** | ⬜ future |
+| **M9 Team / distributed mode + security** | 🟡 local slice shipped (owner-verified directives + secret scanning) |
+| M10 **Autonomous workers** — always-on `nerveplane worker`, wake-on-message headless turns | ✅ |
+| M11 **CLI-agent-agnostic** — provider adapters (Claude / Codex / opencode), `worker --agent`, `install <agent>`, `doctor` | ✅ |
 
 The shipped product already delivers the full thesis: keep parallel coding agents aligned across repos/branches/worktrees/services/contracts. M8/M9 deepen the moat and extend beyond a single laptop.
 
@@ -91,6 +93,33 @@ and `--resume`d for continuity. One worker per worktree (the agent row). See the
 
 **Verify:** with two `nerveplane worker`s running (no humans), agent A's `chat send` to B causes B to wake, reply,
 and the exchange to complete autonomously; an `info`-only event does **not** wake a worker (cost guard).
+
+---
+
+## M11 — CLI-agent-agnostic (multi-provider) — ✅ shipped
+
+**Goal:** work out of the box with **any MCP-capable CLI**, not just Claude Code — so a worker/agent can be driven
+by OpenAI Codex or opencode, and Nerveplane no longer reads as a Claude-only tool. **Why it fits:** the core (7 MCP
+tools over stdio + HTTP, REST, daemon) was already vendor-neutral; the only Claude coupling was the worker's headless
+runner, the installer, and the hook JSON contract.
+
+**Shipped:** a provider abstraction in `src/agents/` — one `AgentProvider` adapter per CLI (`claude.ts`, `codex.ts`,
+`opencode.ts`) behind a registry (`index.ts`, default `claude`), so each CLI's headless flags, output parsing, and
+MCP-config install are isolated in one file. `nerveplane worker --agent <claude|codex|opencode>` (provider-driven
+runner; Claude byte-identical, golden-locked in `tests/agents.test.ts`), `nerveplane install <codex|opencode>` (writes
+the MCP server into `~/.codex/config.toml` / `opencode.json` + an `AGENTS.md` protocol), and `nerveplane doctor`
+(provider matrix + `--run` live smoke). Hooks (zero-touch auto-register/warning-injection) stay a Claude Code feature;
+other CLIs coordinate via MCP + `AGENTS.md` (graceful degradation). See the [CLI Agents guide](/guide/agents).
+
+**Follow-ups (future)**
+- **More adapters:** any CLI is a single new file in `src/agents/` — add as the ecosystem grows.
+- **Provider hooks:** wire lifecycle hooks for CLIs that gain them (e.g. Codex hook support) beyond the current MCP path.
+- **Per-provider resume:** thread native session-resume for Codex/opencode once their headless resume semantics stabilize.
+- **Interactive terminal UI:** a TUI for switching agents / live stats (the rich stats surface stays the web dashboard for now).
+
+**Verify:** full existing `bun test` suite passes unchanged + `tests/agents.test.ts` (registry, Claude golden argv,
+per-adapter argv/parse/install, capability matrix); `worker --agent codex|opencode --print` shows the correct
+per-CLI invocation; `install <agent> --print` shows the right config target; `doctor` reports the provider matrix.
 
 ---
 

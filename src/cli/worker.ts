@@ -3,57 +3,35 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, appendFileSync } fr
 import { api, ensureDaemon } from "../daemon/client.ts";
 import { NERVEPLANE_HOME } from "../config.ts";
 import type { WorkResult } from "../core/worker.ts";
+import { getProvider, DEFAULT_AGENT } from "../agents/index.ts";
+import type { AgentProvider, HeadlessOptions, TurnResult } from "../agents/types.ts";
+import { claudeHeadlessArgs } from "../agents/claude.ts";
 
 /**
- * `nerveplane worker` — run an agent as an always-on autonomous process. Unlike
- * an interactive Claude session (turn-based, only acts when a human/hook drives
- * it), a worker blocks on its Nerveplane inbox and spawns a headless `claude -p`
- * turn to handle/reply to each incoming message — so a teammate can message it
- * and get a reply with no human in the loop. One worker per worktree.
+ * `nerveplane worker` — run an agent as an always-on autonomous process. It blocks
+ * on its Nerveplane inbox and spawns a headless CLI turn to handle/reply to each
+ * incoming message, no human in the loop. The CLI is pluggable via `--agent`
+ * (claude | codex | opencode); each provider's invocation lives in its adapter
+ * (src/agents/*), so this loop is vendor-neutral. One worker per worktree.
  */
 
 export interface WorkerOptions {
   cwd?: string;
   name?: string;
+  agent?: string; // provider id (default "claude")
   model?: string;
-  permissionMode?: string; // claude --permission-mode (default dontAsk)
-  allowedTools?: string; // claude --allowedTools (default "mcp__nerveplane" — all nerveplane tools)
-  mcpConfig?: string; // claude --mcp-config (defaults to an inline nerveplane stdio server)
+  permissionMode?: string; // provider-specific non-interactive mode
+  allowedTools?: string; // provider-specific tool allow-list
+  mcpConfig?: string; // inline MCP config (providers that support it)
   pollMs?: number;
   once?: boolean; // single iteration (testing)
-  print?: boolean; // dry-run: show the claude invocation, spawn nothing
+  print?: boolean; // dry-run: show the invocation, spawn nothing
 }
 
-/** Inline MCP config so the spawned agent always has the nerveplane tools. */
-function defaultMcpConfig(): string {
-  return JSON.stringify({ mcpServers: { nerveplane: { command: "nerveplane", args: ["mcp"] } } });
-}
-
-/**
- * Build the headless `claude` argv (pure — unit-tested). Defaults to
- * `--permission-mode dontAsk --allowedTools "mcp__nerveplane"`: under `dontAsk`
- * the agent can use ONLY the granted tools non-interactively (everything else is
- * auto-denied), and `mcp__nerveplane` grants all of Nerveplane's MCP tools so the
- * agent can actually `chat`/`sync`/`publish` to reply. (With the previous default
- * — `acceptEdits` and no allow-list — MCP tool calls were blocked "pending
- * permission", so the worker could never reply.) Widen with `--allowed-tools` /
- * `--permission-mode` if you want the worker to edit code or run commands too.
- */
+/** Back-compat wrapper (kept for the existing worker tests): the canonical Claude
+ *  argv now lives in the claude adapter. */
 export function buildClaudeArgs(prompt: string, sessionId: string | undefined, opts: WorkerOptions): string[] {
-  const args = [
-    "-p",
-    prompt,
-    "--output-format",
-    "json",
-    "--permission-mode",
-    opts.permissionMode ?? "dontAsk",
-    "--allowedTools",
-    opts.allowedTools ?? "mcp__nerveplane",
-  ];
-  if (opts.model) args.push("--model", opts.model);
-  args.push("--mcp-config", opts.mcpConfig ?? defaultMcpConfig());
-  if (sessionId) args.push("--resume", sessionId);
-  return args;
+  return claudeHeadlessArgs(prompt, { sessionId, model: opts.model, permissionMode: opts.permissionMode, allowedTools: opts.allowedTools, mcpConfig: opts.mcpConfig });
 }
 
 /** Build the turn prompt handed to the headless agent (pure — unit-tested). */
@@ -76,43 +54,56 @@ export function buildWorkerPrompt(work: WorkResult, agentId: string): string {
   return lines.join("\n");
 }
 
-export interface TurnResult {
-  ok: boolean;
-  sessionId?: string;
-  result?: string;
-  exitCode?: number;
-  stderr?: string;
-}
+export type { TurnResult };
 export type TurnRunner = (prompt: string, ctx: { cwd: string; sessionId?: string; opts: WorkerOptions }) => Promise<TurnResult>;
 
-/** Default runner: spawn a real headless `claude -p` turn, capturing exit + stderr. */
-const spawnRunner: TurnRunner = async (prompt, { cwd, sessionId, opts }) => {
-  const args = buildClaudeArgs(prompt, sessionId, opts);
-  const proc = Bun.spawn(["claude", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-  const exitCode = await proc.exited;
-  let parsed: { session_id?: string; result?: string } = {};
-  try {
-    parsed = JSON.parse(out) as { session_id?: string; result?: string };
-  } catch {
-    /* non-JSON output → treated as failure below */
-  }
-  return { ok: exitCode === 0 && typeof parsed.result === "string", sessionId: parsed.session_id, result: parsed.result, exitCode, stderr: err };
-};
+const headlessOptionsFor = (opts: WorkerOptions, sessionId: string | undefined, provider: AgentProvider): HeadlessOptions => ({
+  sessionId: provider.capabilities.resume ? sessionId : undefined,
+  model: opts.model,
+  permissionMode: opts.permissionMode,
+  allowedTools: opts.allowedTools,
+  mcpConfig: opts.mcpConfig,
+});
 
-export async function runWorker(opts: WorkerOptions = {}, runner: TurnRunner = spawnRunner): Promise<number> {
+/** Default runner: spawn a real headless turn via the selected provider. */
+function makeSpawnRunner(provider: AgentProvider): TurnRunner {
+  return async (prompt, { cwd, sessionId, opts }) => {
+    const args = provider.headlessArgs(prompt, headlessOptionsFor(opts, sessionId, provider));
+    const proc = Bun.spawn([provider.bin, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const exitCode = await proc.exited;
+    const { result, sessionId: sid } = provider.parseResult(out);
+    return { ok: exitCode === 0 && typeof result === "string" && result.length > 0, sessionId: sid, result, exitCode, stderr: err };
+  };
+}
+
+export async function runWorker(opts: WorkerOptions = {}, runner?: TurnRunner): Promise<number> {
+  let provider: AgentProvider;
+  try {
+    provider = getProvider(opts.agent ?? DEFAULT_AGENT);
+  } catch (e) {
+    process.stderr.write(`nerveplane worker: ${e instanceof Error ? e.message : String(e)}\n`);
+    return 1;
+  }
+  const run = runner ?? makeSpawnRunner(provider);
   const cwd = opts.cwd ?? process.cwd();
   const name = opts.name ?? (basename(cwd) || "worker");
-  const o: WorkerOptions = { ...opts, mcpConfig: opts.mcpConfig ?? defaultMcpConfig() };
 
   if (opts.print) {
-    const args = buildClaudeArgs("<prompt>", undefined, o);
+    const args = provider.headlessArgs("<prompt>", headlessOptionsFor(opts, undefined, provider));
     process.stdout.write(
-      `nerveplane worker (dry run)\n  cwd:   ${cwd}\n  name:  ${name}\n  each turn runs:  claude ${args
+      `nerveplane worker (dry run)\n  agent: ${provider.label} (${provider.id})\n  cwd:   ${cwd}\n  name:  ${name}\n  each turn runs:  ${provider.bin} ${args
         .map((a) => (a === "<prompt>" || a.includes(" ") ? `"${a}"` : a))
         .join(" ")}\n`,
     );
     return 0;
+  }
+
+  if (!provider.detect()) {
+    process.stderr.write(`nerveplane worker: '${provider.bin}' not found on PATH — is ${provider.label} installed? (continuing; turns will fail until it is)\n`);
+  }
+  if (!provider.capabilities.inlineMcpConfig) {
+    process.stderr.write(`  note: ${provider.label} reads MCP from its config file — run 'nerveplane install ${provider.id}' first so the nerveplane tools are available.\n`);
   }
 
   await ensureDaemon();
@@ -127,7 +118,7 @@ export async function runWorker(opts: WorkerOptions = {}, runner: TurnRunner = s
     process.stderr.write("nerveplane worker: failed to register with the daemon\n");
     return 1;
   }
-  process.stdout.write(`nerveplane worker: ${name} (${agentId}) watching ${cwd}\n  every incoming message wakes a headless claude turn. Ctrl-C to stop.\n`);
+  process.stdout.write(`nerveplane worker: ${name} (${agentId}) via ${provider.label} watching ${cwd}\n  every incoming message wakes a headless turn. Ctrl-C to stop.\n`);
 
   const sessDir = join(NERVEPLANE_HOME, "workers");
   const sessFile = join(sessDir, `${agentId}.json`);
@@ -141,9 +132,8 @@ export async function runWorker(opts: WorkerOptions = {}, runner: TurnRunner = s
     }
   };
   process.stdout.write(`  log: ${logFile}\n`);
-  let sessionId: string | undefined = existsSync(sessFile)
-    ? (JSON.parse(readFileSync(sessFile, "utf8")).sessionId as string | undefined)
-    : undefined;
+  let sessionId: string | undefined =
+    provider.capabilities.resume && existsSync(sessFile) ? (JSON.parse(readFileSync(sessFile, "utf8")).sessionId as string | undefined) : undefined;
 
   // Items already handed to a turn — so a turn that doesn't ack (or fails) can't
   // make /next re-return the same work in a tight, paid loop.
@@ -176,7 +166,7 @@ export async function runWorker(opts: WorkerOptions = {}, runner: TurnRunner = s
     const t0 = Date.now();
     let r: TurnResult;
     try {
-      r = await runner(buildWorkerPrompt({ messages: newMsgs, updates: newUpdates, timedOut: false }, agentId), { cwd, sessionId, opts: o });
+      r = await run(buildWorkerPrompt({ messages: newMsgs, updates: newUpdates, timedOut: false }, agentId), { cwd, sessionId, opts });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       process.stderr.write(`  ↳ turn could not start: ${msg}\n`);
@@ -189,12 +179,11 @@ export async function runWorker(opts: WorkerOptions = {}, runner: TurnRunner = s
     const ms = Date.now() - t0;
 
     if (r.ok) {
-      if (r.sessionId) {
+      if (r.sessionId && provider.capabilities.resume) {
         sessionId = r.sessionId;
         writeFileSync(sessFile, JSON.stringify({ sessionId }));
       }
       if (newMsgs.length) {
-        // Ack the DMs we handled so /next won't return them again.
         try {
           await api("POST", `/api/v1/agents/${agentId}/ack`, { message_ids: newMsgs.map((m) => m.id) });
         } catch {

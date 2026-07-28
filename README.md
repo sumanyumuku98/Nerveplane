@@ -6,6 +6,8 @@
 
 **The coordination plane for autonomous coding agents** — local-first, MCP-native, repo- and service-aware.
 
+Works with **Claude Code, OpenAI Codex, opencode — any MCP-capable CLI**.
+
 [![CI](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml/badge.svg)](https://github.com/sumanyumuku98/Nerveplane/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/nerveplane?logo=npm&color=cb3837)](https://www.npmjs.com/package/nerveplane)
 [![Docs](https://img.shields.io/badge/docs-online-22c55e?logo=readthedocs&logoColor=white)](https://sumanyumuku98.github.io/Nerveplane/)
@@ -41,8 +43,8 @@ None of these are git conflicts, so nothing catches them until merge — and [ne
 | 🔗 **Contract-aware cross-repo routing** | Change an OpenAPI / GraphQL / AsyncAPI / protobuf contract and consumer-repo agents (direct, transitive, and test owners) get warned about the breaking change — across repo boundaries. |
 | 📒 **Decision ledger** | Durable project decisions live separately from chat and are queryable by file, repo, service, or task. |
 | 💬 **Direct agent-to-agent chat** | A first-class `chat` tool: threaded DMs between agents with **real-time delivery** — an agent can `wait` (block) for a reply, and incoming messages are injected before a teammate's next edit. |
-| 🤖 **Autonomous workers** | `nerveplane worker` runs an agent always-on: it blocks on its inbox and wakes a headless `claude` turn to reply to teammates with **no human in the loop** — so messaging an idle agent gets an autonomous response. |
-| 🔌 **MCP-native** | Seven consolidated MCP tools over stdio **and** Streamable HTTP, plus Claude Code PreToolUse/SessionStart/Stop hooks that inject warnings, auto-register agents, and handle DMs before idling. |
+| 🤖 **Autonomous workers** | `nerveplane worker --agent <claude\|codex\|opencode>` runs an agent always-on: it blocks on its inbox and wakes a headless turn to reply to teammates with **no human in the loop** — so messaging an idle agent gets an autonomous response. |
+| 🔌 **MCP-native, agent-agnostic** | Seven consolidated MCP tools over stdio **and** Streamable HTTP — usable by **any MCP-capable CLI** (Claude Code, OpenAI Codex, opencode, …). On Claude Code you also get PreToolUse/SessionStart/Stop hooks that inject warnings, auto-register agents, and handle DMs before idling. |
 | 📊 **Live dashboard** | A Svelte dashboard (`/dashboard`) with SSE-driven agents, conflicts, timeline, chat, decisions, and human actions. |
 | 💻 **Local-first** | One user-level daemon, SQLite (WAL), no cloud dependency. Single binary, or `npm`. |
 
@@ -64,29 +66,34 @@ irm https://raw.githubusercontent.com/sumanyumuku98/Nerveplane/main/install.ps1 
 npm i -g nerveplane
 ```
 
-## Quickstart with Claude Code
+## Quickstart
 
-**Once per machine** — global setup (hooks, login service, MCP):
-
-```bash
-nerveplane setup                                          # global hooks + login service + register this repo
-claude mcp add --scope user nerveplane -- nerveplane mcp  # register the MCP server for all projects
-# restart Claude Code
-```
-
-That's it — **no per-repo setup**. The hooks are installed at user scope (`~/.claude`), the daemon runs as a login service, and **every agent you launch auto-registers** (via a SessionStart hook). Run your agents (one per worktree) and Nerveplane senses, routes, and warns automatically.
-
-<details><summary>Prefer per-repo or manual setup?</summary>
+`nerveplane install <agent>` registers the [seven MCP tools](https://sumanyumuku98.github.io/Nerveplane/reference/mcp-tools) with your CLI and drops in the coordination instructions. Pick your agent:
 
 ```bash
-nerveplane daemon                            # or: nerveplane service install (keep it running at login)
-nerveplane init                              # (optional) pre-register this repo
-claude mcp add nerveplane -- nerveplane mcp  # register the MCP server (native Claude Code CLI)
-nerveplane install claude-code               # project-scoped hooks (no `claude` CLI? add --with-mcp)
-```
-</details>
+# Claude Code — global, once per machine (also installs the zero-touch hooks)
+nerveplane setup && claude mcp add --scope user nerveplane -- nerveplane mcp
 
-`claude mcp add` wires up the [seven MCP tools](https://sumanyumuku98.github.io/Nerveplane/reference/mcp-tools); the hooks auto-register each agent and inject warnings/DMs before edits. Agents call `register` (to add capabilities/task) → `sync` → `publish`, and the daemon passively senses everything else — so agents are warned about each other's edits even if they never publish.
+# OpenAI Codex — MCP server in ~/.codex/config.toml + AGENTS.md
+nerveplane install codex
+
+# opencode — MCP server in opencode.json + AGENTS.md
+nerveplane install opencode
+
+# verify any of them
+nerveplane doctor                       # which agents are installed + MCP-registered
+```
+
+From there, agents call `register` → `sync` → `publish` → `chat`, and the daemon passively senses everything else. On **Claude Code** you also get zero-touch hooks (auto-register, pre-edit warning injection, autonomous stop-reply); other CLIs coordinate through the MCP tools + an `AGENTS.md` protocol. See the [CLI Agents guide](https://sumanyumuku98.github.io/Nerveplane/guide/agents) for the full support matrix.
+
+**Works with your agents:**
+
+| | MCP tools | `worker` (headless) | Zero-touch hooks |
+|---|:---:|:---:|:---:|
+| Claude Code | ✅ | ✅ | ✅ |
+| OpenAI Codex | ✅ | ✅ | — |
+| opencode | ✅ | ✅ | — |
+| any MCP client | ✅ | — | — |
 
 ## See it work
 

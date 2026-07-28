@@ -6,6 +6,8 @@ import { runHook } from "./hook.ts";
 import { runSessionStart } from "./session-start.ts";
 import { runStopCheck } from "./stop-check.ts";
 import { runWorker } from "./worker.ts";
+import { runDoctor } from "./doctor.ts";
+import { getProvider, listProviders } from "../agents/index.ts";
 import { ensureOwnerToken, ownerToken } from "../security/owner.ts";
 import { runEvalCli } from "../eval/run.ts";
 import { installClaudeCode } from "../install/claude-code.ts";
@@ -25,9 +27,10 @@ Daemon:
 Setup:
   setup                  One-time machine setup: global hook + instructions, login
                          service, and register this repo (flags: --no-service, --print)
-  install claude-code    Install the Claude Code hooks + agent instructions
-                         flags: --global (user scope, all repos), --with-mcp, --print
-                         (register the MCP server: claude mcp add --scope user nerveplane -- nerveplane mcp)
+  install <agent>        Wire up a CLI agent (claude | codex | opencode) — register the
+                         nerveplane MCP server + write instructions (Claude also gets hooks).
+                         flags: --global, --with-mcp (claude), --print
+  doctor [--agent <id>]  Show which agents are installed + MCP-registered (--run: live smoke)
   init                   Register the current repo (optional — the agent 'register'
                          tool does this automatically; prefer 'nerveplane setup')
   owner init             Create the owner secret (enables owner-verified directives)
@@ -44,9 +47,9 @@ Project:
   services               List services and contracts
   dashboard              Open the live web dashboard in your browser
   worker                 Run this worktree's agent as an always-on autonomous
-                         process — wakes a headless claude turn to reply to teammate
-                         messages (flags: --name, --model, --permission-mode,
-                         --allowed-tools, --poll-ms, --once, --print)
+                         process — wakes a headless turn to reply to teammate messages
+                         (flags: --agent <claude|codex|opencode>, --name, --model,
+                         --permission-mode, --allowed-tools, --poll-ms, --once, --print)
   eval                   Run the deterministic conflict-detection eval
 
 Integration (usually invoked by tools, not humans):
@@ -265,26 +268,32 @@ export async function runCli(argv: string[]): Promise<number> {
     }
 
     case "install": {
-      if (rest[0] !== "claude-code") {
-        process.stderr.write("usage: nerveplane install claude-code [--global] [--with-mcp] [--print]\n");
+      // `install claude-code` (legacy alias) | `install <claude|codex|opencode>`.
+      const target = rest[0] === "claude-code" ? "claude" : rest[0];
+      if (!target) {
+        process.stderr.write(`usage: nerveplane install <${listProviders().map((p) => p.id).join("|")}> [--global] [--with-mcp] [--print]\n`);
+        return 1;
+      }
+      let provider;
+      try {
+        provider = getProvider(target);
+      } catch (e) {
+        process.stderr.write(`nerveplane: ${e instanceof Error ? e.message : String(e)}\n`);
         return 1;
       }
       const flags = rest.slice(1);
-      const global = flags.includes("--global");
-      const result = installClaudeCode(process.cwd(), {
-        global,
-        withMcp: flags.includes("--with-mcp"),
-        print: flags.includes("--print"),
-      });
-      const verb = flags.includes("--print") ? "would write" : "wrote";
-      process.stdout.write(
-        flags.includes("--print")
-          ? "nerveplane: dry run — no files changed\n"
-          : `nerveplane: installed the Claude Code hooks + agent instructions${global ? " (user scope — all repos)" : ""}\n`,
-      );
+      const print = flags.includes("--print");
+      const result = provider.install(process.cwd(), { global: flags.includes("--global"), withMcp: flags.includes("--with-mcp"), print });
+      const verb = print ? "would write" : "wrote";
+      process.stdout.write(print ? `nerveplane: dry run (${provider.label}) — no files changed\n` : `nerveplane: wired up ${provider.label}\n`);
       for (const f of result.files) process.stdout.write(`  ${verb} ${f}\n`);
       for (const n of result.notes) process.stdout.write(`  • ${n}\n`);
       return 0;
+    }
+
+    case "doctor": {
+      const ai = rest.indexOf("--agent");
+      return runDoctor({ agent: ai >= 0 ? rest[ai + 1] : undefined, run: rest.includes("--run") });
     }
 
     case "agents": {
@@ -415,6 +424,7 @@ export async function runCli(argv: string[]): Promise<number> {
         return i >= 0 ? rest[i + 1] : undefined;
       };
       return runWorker({
+        agent: flag("--agent"),
         name: flag("--name"),
         model: flag("--model"),
         permissionMode: flag("--permission-mode"),
