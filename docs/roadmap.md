@@ -18,6 +18,7 @@ This document is written so **any agent (or contributor) can pick up the next ph
 | **M9 Team / distributed mode + security** | 🟡 local slice shipped (owner-verified directives + secret scanning) |
 | M10 **Autonomous workers** — always-on `nerveplane worker`, wake-on-message headless turns | ✅ |
 | M11 **CLI-agent-agnostic** — provider adapters (Claude / Codex / opencode), `worker --agent`, `install <agent>`, `doctor` | ✅ |
+| M12 **Terminal UI** — interactive pickers (`worker`/`install`/`conflicts`) + `nerveplane watch` live SSE monitor | ✅ |
 
 The shipped product already delivers the full thesis: keep parallel coding agents aligned across repos/branches/worktrees/services/contracts. M8/M9 deepen the moat and extend beyond a single laptop.
 
@@ -115,11 +116,33 @@ other CLIs coordinate via MCP + `AGENTS.md` (graceful degradation). See the [CLI
 - **More adapters:** any CLI is a single new file in `src/agents/` — add as the ecosystem grows.
 - **Provider hooks:** wire lifecycle hooks for CLIs that gain them (e.g. Codex hook support) beyond the current MCP path.
 - **Per-provider resume:** thread native session-resume for Codex/opencode once their headless resume semantics stabilize.
-- **Interactive terminal UI:** a TUI for switching agents / live stats (the rich stats surface stays the web dashboard for now).
 
 **Verify:** full existing `bun test` suite passes unchanged + `tests/agents.test.ts` (registry, Claude golden argv,
 per-adapter argv/parse/install, capability matrix); `worker --agent codex|opencode --print` shows the correct
 per-CLI invocation; `install <agent> --print` shows the right config target; `doctor` reports the provider matrix.
+
+---
+
+## M12 — Terminal UI (interactive pickers + live monitor) — ✅ shipped
+
+**Goal:** make the CLI interactive where it helps, so you don't have to memorize flags, and give a terminal-native
+live view of the coordination plane. Prompted by `nerveplane worker` silently defaulting to `claude`.
+
+**Shipped:** (1) **interactive pickers** via `@clack/prompts` — `worker`/`install` prompt for the CLI agent (with
+install + MCP status) and `conflicts` offers a resolve/dismiss flow, all **TTY-gated** so pipes/scripts/CI keep their
+plain behavior and every flag still works; (2) **`nerveplane watch`** (alias `monitor`, `--once` for a one-shot
+snapshot) — a full-screen, hand-rolled ANSI monitor (Agents · Conflicts · Events · Chat) that subscribes to the
+daemon's SSE `/events` stream and lets you resolve/dismiss conflicts inline (`r`/`d`). A small `src/tui/ansi.ts`
+helper is a no-op off a TTY / under `NO_COLOR`. No native deps — bundles into the single-file binaries. See the
+[Terminal UI guide](/guide/tui).
+
+**Why hand-rolled (not OpenTUI):** OpenTUI's Zig core loads at runtime via `Bun.dlopen()` from per-platform
+prebuilts, which `bun build --compile` doesn't bundle and can't cross-compile from one CI host — it would break the
+5 standalone binaries. Hand-rolled ANSI keeps every distribution channel intact.
+
+**Verify:** existing suite unchanged + `tests/tui.test.ts` (SSE parser, reducer, `renderLines` snapshot, `resolveAgent`
+non-TTY/explicit paths, ANSI no-op off-TTY); `bun build --compile` produces a working binary; `nerveplane worker
+--print` / piped `agents`/`events`/`conflicts` byte-identical to before; `nerveplane watch --once` prints a snapshot.
 
 ---
 

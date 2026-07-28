@@ -7,6 +7,8 @@ import { runSessionStart } from "./session-start.ts";
 import { runStopCheck } from "./stop-check.ts";
 import { runWorker } from "./worker.ts";
 import { runDoctor } from "./doctor.ts";
+import { runWatch } from "./watch.ts";
+import { isInteractive, resolveAgent, pickAgent, pickConflict, pickAction } from "./prompt.ts";
 import { getProvider, listProviders } from "../agents/index.ts";
 import { ensureOwnerToken, ownerToken } from "../security/owner.ts";
 import { runEvalCli } from "../eval/run.ts";
@@ -46,8 +48,11 @@ Project:
   service uninstall      Remove the daemon service unit
   services               List services and contracts
   dashboard              Open the live web dashboard in your browser
+  watch                  Live full-screen terminal monitor — agents, conflicts,
+                         events, chat (same data as the dashboard). alias: monitor; --once
   worker                 Run this worktree's agent as an always-on autonomous
-                         process — wakes a headless turn to reply to teammate messages
+                         process — wakes a headless turn to reply to teammate messages.
+                         Prompts for the CLI agent on a TTY; override with --agent.
                          (flags: --agent <claude|codex|opencode>, --name, --model,
                          --permission-mode, --allowed-tools, --poll-ms, --once, --print)
   eval                   Run the deterministic conflict-detection eval
@@ -269,7 +274,8 @@ export async function runCli(argv: string[]): Promise<number> {
 
     case "install": {
       // `install claude-code` (legacy alias) | `install <claude|codex|opencode>`.
-      const target = rest[0] === "claude-code" ? "claude" : rest[0];
+      let target = rest[0] === "claude-code" ? "claude" : rest[0];
+      if (!target && isInteractive()) target = await pickAgent(); // TTY picker when no target given
       if (!target) {
         process.stderr.write(`usage: nerveplane install <${listProviders().map((p) => p.id).join("|")}> [--global] [--with-mcp] [--print]\n`);
         return 1;
@@ -349,6 +355,16 @@ export async function runCli(argv: string[]): Promise<number> {
         process.stdout.write("nerveplane: no open conflicts\n");
         return 0;
       }
+      // On a TTY, offer an interactive resolve/dismiss flow; else print the plain list.
+      if (isInteractive()) {
+        const cid = await pickConflict(conflicts.map((w) => ({ id: w.id, type: w.type, severity: w.severity, summary: w.summary })));
+        if (!cid) return 0;
+        const action = await pickAction();
+        if (!action) return 0;
+        const done = await api<{ ok: boolean }>("POST", `/api/v1/conflicts/${cid}/${action}`, {});
+        process.stdout.write(done.data?.ok ? `nerveplane: conflict ${action}d\n` : "nerveplane: conflict not found\n");
+        return done.data?.ok ? 0 : 1;
+      }
       for (const w of conflicts) {
         process.stdout.write(`  [${w.severity}] ${w.type.padEnd(13)} ${w.summary}\n        → ${w.suggestedAction ?? ""}  (${w.id})\n`);
       }
@@ -423,8 +439,19 @@ export async function runCli(argv: string[]): Promise<number> {
         const i = rest.indexOf(name);
         return i >= 0 ? rest[i + 1] : undefined;
       };
+      const explicit = flag("--agent");
+      const print = rest.includes("--print");
+      // Prompt for the agent only on a TTY when neither --agent nor --print is given;
+      // otherwise resolve to the explicit id (validated) or the default (claude).
+      let agent: string | undefined;
+      try {
+        agent = !explicit && print ? undefined : await resolveAgent(explicit);
+      } catch (e) {
+        process.stderr.write(`nerveplane worker: ${e instanceof Error ? e.message : String(e)}\n`);
+        return 1;
+      }
       return runWorker({
-        agent: flag("--agent"),
+        agent,
         name: flag("--name"),
         model: flag("--model"),
         permissionMode: flag("--permission-mode"),
@@ -432,9 +459,13 @@ export async function runCli(argv: string[]): Promise<number> {
         mcpConfig: flag("--mcp-config"),
         pollMs: flag("--poll-ms") ? Number(flag("--poll-ms")) : undefined,
         once: rest.includes("--once"),
-        print: rest.includes("--print"),
+        print,
       });
     }
+
+    case "watch":
+    case "monitor":
+      return runWatch({ once: rest.includes("--once") });
 
     case "eval":
       return runEvalCli();

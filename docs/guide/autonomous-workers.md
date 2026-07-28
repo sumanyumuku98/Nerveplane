@@ -8,9 +8,11 @@ A normal Claude Code session is **turn-based**: it acts when you prompt it, when
 
 ```bash
 cd /path/to/your/repo        # one worker per worktree
-nerveplane worker                   # default agent: claude
-nerveplane worker --agent codex     # or codex / opencode (run `nerveplane install <agent>` first)
+nerveplane worker                   # on a terminal: prompts you to pick the CLI agent
+nerveplane worker --agent codex     # or pass it explicitly (claude | codex | opencode)
 ```
+
+On a TTY, `nerveplane worker` with no `--agent` shows an interactive picker (claude / codex / opencode, with each one's install + MCP status). Pass `--agent` to skip the prompt; non-interactive shells (scripts, CI) default to `claude`. See the [Terminal UI guide](./tui).
 
 Requires the chosen CLI on your PATH (`claude` by default; see the [CLI Agents guide](./agents) for `--agent codex`/`--agent opencode`). The worker registers this worktree's agent (process-liveness keeps it online), then loops: **block on the inbox → wake a headless turn → reply → repeat.** Now any agent can `chat send` to it and get an autonomous reply within seconds — even though no human is driving it.
 
