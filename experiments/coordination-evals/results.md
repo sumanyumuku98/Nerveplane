@@ -35,3 +35,18 @@ Live run — agent=claude (Claude Code 2.1.170), K=5 seeds, 200-note dump (~10�
 **What routing genuinely buys (reframed):** context *efficiency*, not attention rescue — the dump spent ~10–12k tokens to deliver one fact vs. ~60 tokens routed (~150× less cost/latency) for the same outcome. Routing's proven value remains the Tier-A results (conflict avoidance, precise cross-repo consumer routing), not H7.
 
 **Follow-ups to actually test H7 (labeled, not cherry-picked):** re-run with `NP_EVAL_AGENT` on a cheaper/weaker model, `NP_EVAL_DISTRACTORS` ≫ (100k+-token context), and a lower-salience fact; report the curve whatever it shows.
+
+---
+
+## Tier-B (frontier) — recreating the failure via a SUPERSEDED decision
+
+The pure positional dip doesn't appear on frontier models, so we tested the realistic failure they *do* exhibit: a **superseded decision under distraction + recency**. The current decision is buried mid-history; a stale decision sits early and a plausible distractor reinforcing it sits at the recency edge; hard-negative auth notes add interference. Live — agent=claude (frontier):
+
+| experiment | dump (history in context) | Nerveplane routed | n |
+|---|---|---|---|
+| positional recall (start/mid/end) | 100% / 100% / 100% | 100% | K=5 |
+| **superseded decision** | **70%** | **100%** | **K=20** |
+
+**Finding (frontier, K=20):** with the current decision buried and a stale+recent distractor pulling the other way, frontier Claude picked the **wrong (deprecated) auth in 6/20 runs (70% adherence)**; routing the *current* decision fixed it (**20/20, 100%**). ≈30% absolute lift; Fisher exact 14/20 vs 20/20 ≈ **p≈0.02** — directionally strong and significant at this n. The model isn't rescued from *position*; it's handed the authoritative current fact instead of a history where the update is buried and a wrong note is recent — exactly Nerveplane's decision-ledger(supersede) + JIT-routing value.
+
+**Honest framing:** reframe H7 from "lost-in-the-middle" (which frontier models resist — 100% positional recall above) to **"current-decision adherence under stale/recency distraction."** That's the claim that survives on frontier models. Expect the gap to widen further on cheaper models (`NP_EVAL_MODEL`) and larger contexts; a bigger n + a model sweep would harden it further.
