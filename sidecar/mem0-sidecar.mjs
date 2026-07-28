@@ -31,8 +31,9 @@ const PORT = Number(process.env.NP_SIDECAR_PORT || 0);
 const EMBEDDER = process.env.NERVEPLANE_EMBEDDER === "ollama" ? "ollama" : "openai";
 
 mkdirSync(HOME, { recursive: true });
-// mem0's "memory" vector store writes vector_store.db to process.cwd() (mem0 #4290),
-// so anchor cwd to NERVEPLANE_HOME to keep the index under our home dir.
+// mem0's "memory" store persists to a SQLite file (memory.db) in process.cwd(),
+// so anchor cwd to NERVEPLANE_HOME to keep the index under our home dir. Verified
+// live: the index survives a restart (no re-embed).
 try {
   process.chdir(HOME);
 } catch {
@@ -67,17 +68,23 @@ async function getMemory() {
   return memory;
 }
 
+// add() takes camelCase top-level scope; search() takes snake_case under `filters` (mem0 3.x).
 const scopeOpts = (scope = {}) => ({ userId: scope.repoId || "global", ...(scope.taskId ? { runId: scope.taskId } : {}), ...(scope.agentId ? { agentId: scope.agentId } : {}) });
+const scopeFilters = (scope = {}) => ({ user_id: scope.repoId || "global", ...(scope.taskId ? { run_id: scope.taskId } : {}), ...(scope.agentId ? { agent_id: scope.agentId } : {}) });
 
 /** Map a mem0 search response (varied shapes) → [{ npId, rank }]. Exported shape
  *  the daemon relies on; unknown/id-less results are dropped. */
 export function mapSearch(res) {
   const results = Array.isArray(res) ? res : (res?.results ?? []);
+  const seen = new Set();
   const out = [];
-  results.forEach((r, i) => {
+  for (const r of results) {
     const npId = r?.metadata?.npId ?? r?.payload?.metadata?.npId;
-    if (npId) out.push({ npId, rank: i });
-  });
+    if (npId && !seen.has(npId)) {
+      seen.add(npId); // mem0 can return the same memory multiple times — dedup, contiguous rank
+      out.push({ npId, rank: out.length });
+    }
+  }
   return out;
 }
 
@@ -90,7 +97,8 @@ async function handle(method, path, body) {
     return { ok: true };
   }
   if (method === "POST" && path === "/search") {
-    const res = await mem.search(body.query, { ...scopeOpts(body.scope), limit: body.limit ?? 20 });
+    // mem0 3.x: scope goes under `filters`, not as top-level params.
+    const res = await mem.search(body.query, { filters: scopeFilters(body.scope), limit: body.limit ?? 20 });
     return { results: mapSearch(res) };
   }
   if (method === "POST" && path === "/delete") {

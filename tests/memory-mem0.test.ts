@@ -29,10 +29,10 @@ test("rrf fuses ranked lists by id and rewards agreement", () => {
 
 // --- sidecar result mapping (pure, no mem0) ---
 test("sidecar mapSearch extracts npIds in rank order and drops id-less results", () => {
-  const res = { results: [{ memory: "x", metadata: { npId: "mem_1" } }, { memory: "y", metadata: {} }, { memory: "z", metadata: { npId: "mem_2" } }] };
+  const res = { results: [{ memory: "x", metadata: { npId: "mem_1" } }, { memory: "y", metadata: {} }, { memory: "z", metadata: { npId: "mem_2" } }, { memory: "x2", metadata: { npId: "mem_1" } }] };
   expect(mapSearch(res)).toEqual([
     { npId: "mem_1", rank: 0 },
-    { npId: "mem_2", rank: 2 },
+    { npId: "mem_2", rank: 1 }, // id-less dropped; duplicate mem_1 deduped; ranks contiguous
   ]);
   expect(mapSearch([])).toEqual([]);
 });
