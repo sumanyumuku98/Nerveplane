@@ -47,8 +47,8 @@ export interface MemoryHit extends MemoryRecord {
 }
 
 export interface MemoryBackend {
-  write(rec: MemoryRecord): void;
-  recall(query: string | undefined, scope: MemoryScope, opts?: RecallOptions): MemoryHit[];
+  write(rec: MemoryRecord): Promise<void>;
+  recall(query: string | undefined, scope: MemoryScope, opts?: RecallOptions): Promise<MemoryHit[]>;
 }
 
 interface Row {
@@ -123,8 +123,21 @@ export function toMatchExpr(query: string): string {
 
 /** Default backend: FTS5 keyword (BM25) over `memories_fts`, scope-filtered,
  *  pinned-boosted. Zero dependencies, ships in the compiled binary. */
+/** Fetch memory records by id, returned as a Map for order-preserving resolution
+ *  (used by the semantic/hybrid backends to turn ranked ids into full records). */
+export function memoriesByIds(ids: string[]): Map<string, MemoryHit> {
+  const map = new Map<string, MemoryHit>();
+  if (ids.length === 0) return map;
+  const db = getRawSqlite();
+  const placeholders = ids.map(() => "?").join(",");
+  const now = new Date().toISOString();
+  const rows = db.query(`SELECT * FROM memories WHERE id IN (${placeholders}) AND (expires_at IS NULL OR expires_at > ?)`).all(...ids, now) as Row[];
+  for (const r of rows) map.set(r.id, toHit(r));
+  return map;
+}
+
 export const keywordBackend: MemoryBackend = {
-  write(rec) {
+  async write(rec) {
     const db = getRawSqlite();
     db.query(
       `INSERT INTO memories (id, author_agent_id, kind, title, body, repo_id, task_id, branch, service_id, file, tags_json, pinned, supersedes, created_at, updated_at, expires_at)
@@ -153,7 +166,7 @@ export const keywordBackend: MemoryBackend = {
     }
   },
 
-  recall(query, scope, opts) {
+  async recall(query, scope, opts) {
     const db = getRawSqlite();
     const limit = Math.max(1, Math.min(opts?.limit ?? 20, 100));
     const { sql: scopeSql, params: scopeParams } = scopeClause(scope, "m");
@@ -182,14 +195,5 @@ export const keywordBackend: MemoryBackend = {
   },
 };
 
-/** Placeholder for the v2 semantic/vector engine (embedder-only, embeddings as
- *  BLOBs, brute-force cosine, RRF-fused with keyword). Defined so the port is
- *  stable; wired in a later pass. */
-export const semanticBackend: MemoryBackend = {
-  write() {
-    throw new Error("nerveplane: semantic memory backend not implemented yet — use NERVEPLANE_MEMORY=keyword (default)");
-  },
-  recall() {
-    throw new Error("nerveplane: semantic memory backend not implemented yet — use NERVEPLANE_MEMORY=keyword (default)");
-  },
-};
+// The semantic engine now lives in mem0-backend.ts (via the Node sidecar) and
+// the fused engine in hybrid.ts; core/memory.ts selects among them by mode.

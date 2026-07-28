@@ -1,20 +1,25 @@
 import { getRawSqlite } from "../storage/db.ts";
 import { newId, nowIso } from "./util.ts";
 import { MEMORY_MODE } from "../config.ts";
-import { keywordBackend, semanticBackend } from "../memory/backend.ts";
+import { keywordBackend } from "../memory/backend.ts";
+import { mem0Backend, mem0Forget } from "../memory/mem0-backend.ts";
+import { hybridBackend } from "../memory/hybrid.ts";
 import type { MemoryBackend, MemoryHit, MemoryKind, MemoryRecord, MemoryScope, RecallOptions } from "../memory/backend.ts";
 
 export type { MemoryHit, MemoryKind, MemoryRecord, MemoryScope } from "../memory/backend.ts";
 
 /**
- * Universal, cross-agent/cross-CLI memory. Agents write with `remember` and read
- * with `recall`; the daemon also injects recalled memories at SessionStart and
- * into worker turns. Retrieval engine is chosen by NERVEPLANE_MEMORY (keyword
- * default; hybrid/semantic is a later pass). Records are owned in our SQLite, so
- * switching engines never migrates data.
+ * Universal, cross-agent/cross-CLI memory. Agents `remember` and `recall`; the
+ * daemon also injects recalls at SessionStart and into worker turns. The record
+ * itself ALWAYS lives in our SQLite (keyword/FTS is the source of truth); when
+ * NERVEPLANE_MEMORY is `semantic`/`hybrid`, writes are additionally indexed into
+ * the mem0 sidecar. So switching engines never migrates or loses data, and recall
+ * gracefully falls back to keyword if the sidecar is unavailable.
  */
-function backend(): MemoryBackend {
-  return MEMORY_MODE === "hybrid" ? semanticBackend : keywordBackend;
+function recallBackend(): MemoryBackend {
+  if (MEMORY_MODE === "semantic") return mem0Backend;
+  if (MEMORY_MODE === "hybrid") return hybridBackend;
+  return keywordBackend;
 }
 
 export interface RememberInput {
@@ -33,7 +38,7 @@ export interface RememberInput {
   expiresAt?: string;
 }
 
-export function remember(input: RememberInput): MemoryRecord {
+export async function remember(input: RememberInput): Promise<MemoryRecord> {
   const body = (input.body ?? "").trim();
   if (!body) throw new Error("memory 'body' is required");
   const now = nowIso();
@@ -55,20 +60,34 @@ export function remember(input: RememberInput): MemoryRecord {
     updatedAt: now,
     expiresAt: input.expiresAt,
   };
-  backend().write(rec);
+  await keywordBackend.write(rec); // always: SQLite record + FTS (source of truth)
+  if (MEMORY_MODE !== "keyword") {
+    try {
+      await mem0Backend.write(rec); // additionally index for semantic/hybrid (best-effort)
+    } catch {
+      /* indexing is best-effort; the record is already durable in SQLite */
+    }
+  }
   return rec;
 }
 
-export function recall(query: string | undefined, scope: MemoryScope = {}, opts?: RecallOptions): MemoryHit[] {
-  return backend().recall(query, scope, opts);
+export function recall(query: string | undefined, scope: MemoryScope = {}, opts?: RecallOptions): Promise<MemoryHit[]> {
+  return recallBackend().recall(query, scope, opts);
 }
 
-/** Scoped list (no query) — newest + pinned first. */
-export function listMemories(scope: MemoryScope = {}, opts?: RecallOptions): MemoryHit[] {
-  return backend().recall(undefined, scope, opts);
+/** Scoped list (no query) — newest + pinned first. Always keyword (no vector query). */
+export function listMemories(scope: MemoryScope = {}, opts?: RecallOptions): Promise<MemoryHit[]> {
+  return keywordBackend.recall(undefined, scope, opts);
 }
 
-export function forget(id: string): boolean {
+export async function forget(id: string): Promise<boolean> {
   const res = getRawSqlite().query("DELETE FROM memories WHERE id = ?").run(id);
+  if (MEMORY_MODE !== "keyword") {
+    try {
+      await mem0Forget(id);
+    } catch {
+      /* best-effort */
+    }
+  }
   return res.changes > 0;
 }

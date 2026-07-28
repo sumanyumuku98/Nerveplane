@@ -20,6 +20,7 @@ This document is written so **any agent (or contributor) can pick up the next ph
 | M11 **CLI-agent-agnostic** — provider adapters (Claude / Codex / opencode), `worker --agent`, `install <agent>`, `doctor` | ✅ |
 | M12 **Terminal UI** — interactive pickers (`worker`/`install`/`conflicts`) + `nerveplane watch` live SSE monitor | ✅ |
 | M13 **Universal memory** — cross-agent/cross-CLI `memory` tool (remember/recall), FTS5 keyword engine, SessionStart/worker recall injection | ✅ |
+| M13.1 **Semantic + hybrid memory** — mem0 Node sidecar, `keyword`/`semantic`/`hybrid` modes, `memory setup`; distribution narrowed to **npm-only** | ✅ |
 
 The shipped product already delivers the full thesis: keep parallel coding agents aligned across repos/branches/worktrees/services/contracts. M8/M9 deepen the moat and extend beyond a single laptop.
 
@@ -155,10 +156,12 @@ non-TTY/explicit paths, ANSI no-op off-TTY); `bun build --compile` produces a wo
 
 **Why keyword-first (not mem0 now):** semantic retrieval needs an embedder/vector store (egress or a native `dlopen` extension that won't survive `bun build --compile`), so it can't be the zero-config default. The interface + owned records are the future-proofing — flip `NERVEPLANE_MEMORY=hybrid` + an embedder later with no rewrite.
 
+**Semantic + hybrid — ✅ shipped (M13.1):** mem0 provides semantic recall via a **Node sidecar** the Bun daemon spawns over `127.0.0.1` (mem0's native `better-sqlite3` won't load under Bun). Modes `keyword`/`semantic`/`hybrid` (RRF-fused) via `nerveplane memory setup` (persisted to `~/.nerveplane/config.json`; env overrides). Records stay in our SQLite; the sidecar's vector index persists to a SQLite file under `~/.nerveplane/` (local, no external DB, survives restart). Recall falls back to keyword whenever the sidecar/embedder is unavailable. **Distribution narrowed to npm-only** (the sidecar needs Node, which npm brings; standalone binaries + Homebrew were dropped).
+
 **Follow-ups (future)**
-- **Semantic backend (v2):** embedder-only (no LLM extraction), embeddings as BLOBs in our SQLite, brute-force cosine, RRF-fused with keyword; `NERVEPLANE_EMBEDDER=ollama|openai`. mem0 as a possible adapter.
 - **Automatic extraction:** optionally distill memories from chat/publish traffic (adds an LLM dependency).
 - **PreToolUse file-scoped recall:** inject memories for the files about to be edited (gated for token cost).
+- **Persistent server vector stores:** optional qdrant/pgvector for very large memory sets.
 
 **Verify:** existing suite unchanged + `tests/memory.test.ts` (unit + integration: round-trip/FTS, multi-agent scope isolation, `memory` tool via `coreCtx`, cross-CLI continuity asserted, pinned boost); golden guard that SessionStart/worker output is byte-identical when memory is empty; `bun build --compile` binary runs the embedded FTS5 migration and round-trips a memory.
 

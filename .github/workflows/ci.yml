@@ -36,6 +36,3 @@ jobs:
 
       - name: Build dashboard
         run: bun run build:dashboard
-
-      - name: Build single binary
-        run: bun run build
