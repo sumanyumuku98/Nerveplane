@@ -45,6 +45,13 @@ export const MAX_SESSION_MS = 24 * 60 * 60_000; // 24h
 /** How often the sensing engine polls registered repos for git changes. */
 export const REPO_POLL_INTERVAL_MS = 5_000;
 
+/**
+ * Minimum changed-file count in an agent's worktree that, on its own, counts as
+ * "substantial work" for the Stop-hook memory-checkpoint nudge (core/checkpoint.ts).
+ * Recorded decisions and task handoffs always count regardless of this threshold.
+ */
+export const MEMORY_CHECKPOINT_MIN_FILES = Number(process.env.NERVEPLANE_MEMORY_CHECKPOINT_MIN_FILES ?? 3);
+
 export interface DaemonLock {
   pid: number;
   port: number;

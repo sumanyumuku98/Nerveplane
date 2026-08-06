@@ -303,10 +303,14 @@ export const agentWorktreeState = sqliteTable("agent_worktree_state", {
   updatedAt: text("updated_at").notNull(),
 });
 
-/** Plan addition: per-agent read cursor so `sync` returns only fresh items. */
+/** Plan addition: per-agent read cursor so `sync` returns only fresh items.
+ *  `lastMemoryNudgeAt` is a second cursor used by the Stop-hook memory-checkpoint
+ *  nudge (core/checkpoint.ts) so the same batch of memory-worthy work is nudged
+ *  at most once — stays null for agents that are never nudged. */
 export const syncMarkers = sqliteTable("sync_markers", {
   agentId: text("agent_id").primaryKey(),
   lastSyncAt: text("last_sync_at").notNull(),
+  lastMemoryNudgeAt: text("last_memory_nudge_at"),
 });
 
 /** Plan addition: dedup / suppression to keep routed warnings high-precision. */
