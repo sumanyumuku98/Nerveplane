@@ -1,0 +1,1 @@
+ALTER TABLE `sync_markers` ADD `last_memory_nudge_at` text;

@@ -10,6 +10,7 @@ import { claimTask, updateTask, handoffTask, requestReview, openTasks } from "..
 import { recordDecision, queryDecisions, recentDecisions, setDecisionStatus } from "../core/decisions.ts";
 import { remember, recall, listMemories, forget } from "../core/memory.ts";
 import type { MemoryKind } from "../core/memory.ts";
+import { memoryCheckpointStatus } from "../core/checkpoint.ts";
 import { listConflicts, resolveConflict, dismissConflict } from "../core/conflicts.ts";
 import { scanServiceGraph, listServices, listContracts, invalidateGraphCache } from "../services/contracts.ts";
 import { buildJoinPacket } from "../core/join.ts";
@@ -120,6 +121,15 @@ export function buildApi(): Hono {
     const body = await c.req.json().catch(() => ({}) as { ack?: boolean });
     heartbeat(c.req.param("id"));
     return c.json({ messages: peekMessages(c.req.param("id"), { ack: body.ack ?? true }) });
+  });
+
+  // Memory-checkpoint status (used by the Stop hook): should this agent be nudged
+  // to save a durable memory before going idle? Acks the nudge cursor so the same
+  // batch of memory-worthy work is nudged at most once.
+  api.post("/agents/:id/memory-checkpoint", async (c) => {
+    const body = await c.req.json().catch(() => ({}) as { ack?: boolean });
+    heartbeat(c.req.param("id"));
+    return c.json(memoryCheckpointStatus(c.req.param("id"), { ack: body.ack ?? true }));
   });
 
   // Long-poll for actionable work (used by `nerveplane worker`): blocks until an
