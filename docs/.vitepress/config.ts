@@ -8,7 +8,11 @@ export default defineConfig({
   base: "/Nerveplane/",
   cleanUrls: true,
   lastUpdated: true,
-  head: [["link", { rel: "icon", href: "/Nerveplane/logo.svg" }]],
+  head: [
+    ["link", { rel: "icon", href: "/Nerveplane/logo.svg" }],
+    ["link", { rel: "apple-touch-icon", href: "/Nerveplane/logo.png" }],
+    ["meta", { property: "og:image", content: "/Nerveplane/logo.png" }],
+  ],
   themeConfig: {
     logo: "/logo.svg",
     nav: [

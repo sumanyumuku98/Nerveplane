@@ -5,7 +5,7 @@ hero:
   text: The coordination plane for autonomous coding agents
   tagline: Local-first, MCP-compatible, repo- and service-aware. Keep parallel coding agents aligned across repos, branches, worktrees, services, and contracts — before merge.
   image:
-    src: /logo.svg
+    src: /logo.png
     alt: Nerveplane
   actions:
     - theme: brand
