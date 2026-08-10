@@ -34,15 +34,29 @@ Real agents; a breaking `amount`→`amountCents` contract migration. CTSR:
 The coordination *signal* is capability-independent (both models 0.00 without it);
 *acting on* the plan is partly capability-dependent (frontier 1.00 > Haiku 0.60).
 
-## Remaining (scoped, expensive — greenlight before running)
+## Live effect-by-N (fan-out, frontier, K=3) — **DONE**
 
-1. **Live effect-by-N** = a **1-producer → N-consumer fan-out** where each consumer
-   must adapt to the same contract change; report per-consumer adaptation rate vs N
-   (C0 breaks more consumers as N grows; C1-plan holds). Contention-on-one-file is a
-   poor live N probe because real agents make *additive* edits that git merges (see
-   the shared-file pilot), so use fan-out. Cost ≈ (1+N) agents × 3 arms × K seeds ×
-   models.
-2. **Second model family** (codex / opencode) on the contract scenario. Access is
+1 producer migrates the contract; N consumers each render in their own file. Metric =
+per-consumer **adaptation rate** (fraction using the new field post-merge).
+
+| N consumers | C0 | C1-detect | C1-plan |
+|---|---|---|---|
+| 2 | 0.00 | 0.00 | **1.00** |
+| 4 | 0.00 | 0.00 | **1.00** |
+| 8 | 0.00 | 0.00 | **1.00** |
+
+**The live effect holds and does not decay with N.** At every N, no-coordination and
+vague reactive detection leave **0%** of consumers adapted (each independently codes
+to the stale contract in its own worktree), while the planner adapts **100%**. The
+*rate* is saturated (0 vs 1), so the **absolute count of broken consumers under C0
+grows linearly with N** (0/2 → 0/4 → 0/8 correct) while C1-plan holds every consumer.
+Verified against raw replies (C0 consumers use `inv.amount`; C1-plan use `amountCents`)
+— not a scorer artifact. This resolves the memo's #1 threat (the GO decision's main
+contingency).
+
+## Remaining (scoped follow-ups)
+
+1. **Second model family** (codex / opencode) on the contract scenario. Access is
    **confirmed** — `codex exec` is authenticated and responds. The remaining work is
    a provider-aware edit invocation in `live-multi.ts` (codex needs
    `--dangerously-bypass-approvals-and-sandbox` and a different output parse than
