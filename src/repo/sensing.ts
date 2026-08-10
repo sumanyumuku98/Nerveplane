@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { REPO_POLL_INTERVAL_MS } from "../config.ts";
 import { discoverAgents } from "../core/registry.ts";
 import { emitEvent } from "../core/events.ts";
@@ -43,8 +44,19 @@ export async function senseAgent(agentId: string, worktreePath: string, repoId: 
   // `updatedAt` must mean "last time the changed-file set actually changed", not
   // "last time we polled" — the memory-checkpoint nudge (core/checkpoint.ts) gates
   // on it, and bumping it every tick made a dirty worktree re-nudge every turn.
-  const realChange = !prev || setsDiffer(current, prev.changed) || state.branch !== prev.branch || state.headSha !== prev.headSha;
-  const changedAt = realChange ? now : prev!.changedAt;
+  //
+  // On the first observation this daemon lifetime (no in-memory snapshot), seed
+  // the comparison baseline from the persisted row so a daemon RESTART doesn't
+  // look like a fresh change — otherwise every restart (we restart on each update)
+  // would re-arm one nudge for every dirty agent.
+  let baseline = prev;
+  if (!baseline) {
+    const row = getDb().select().from(agentWorktreeState).where(eq(agentWorktreeState.agentId, agentId)).get();
+    if (row) baseline = { changed: new Set(row.changedFiles ?? []), branch: row.branch, headSha: row.headSha, changedAt: row.updatedAt };
+  }
+  const realChange =
+    !baseline || setsDiffer(current, baseline.changed) || state.branch !== baseline.branch || state.headSha !== baseline.headSha;
+  const changedAt = realChange ? now : baseline!.changedAt;
 
   // Persist the latest sensed state every tick so the cross-agent conflict
   // detector always has each agent's current changed-file set (plan M2.1), but
