@@ -15,8 +15,12 @@
  *     headless path in src/agents + src/cli/worker.ts]
  *  2) LOST-IN-THE-MIDDLE (H7) — the self-contained, highest-signal experiment.
  */
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
 import { getProvider, listProviders } from "../../src/agents/index.ts";
+import { remember, recall } from "../../src/core/memory.ts";
+import { initBenchDb } from "./harness.ts";
 
 const REPLY_LOG = process.env.NP_EVAL_LOG ?? "/tmp/np-eval-replies.log";
 
@@ -180,11 +184,81 @@ function adheredSupersede(reply: string): boolean {
   return /authClient/i.test(reply) && !/express-session/i.test(reply);
 }
 
-async function runTurn(agentId: string, prompt: string, label = ""): Promise<string> {
+// --- Memory-continuity experiment (SUM-152, S2.1) ---
+// The paper's "capability-independent" result: no model, however strong, can
+// recall a PROJECT-SPECIFIC gotcha it was never told. A prior agent (session 1)
+// discovered the convention and recorded it with the REAL memory primitive; a
+// fresh later agent (session 2) either has that memory recalled into its context
+// (C1) or not (C0). C0 and C1 differ ONLY in whether the recalled lesson is
+// present — so any C1>C0 lift is attributable to memory, not model strength.
+
+// GROUND-TRUTH SANDBOX (fixes the validity bug from the first keyed run): a
+// tool-enabled agent fact-checks a recalled note against the repo it's in. So we
+// run session 2 INSIDE an isolated repo that genuinely contains TWO working auth
+// modules — `src/lib/authClient.ts` (getAuth) and `src/legacy/expressSession.ts`
+// (session middleware). Both are real and importable, so the recalled note is
+// verifiably true. Which one is *canonical* is a TEAM DECISION that is NOT
+// derivable from the code alone — that decision is exactly what memory carries.
+// C0 (no memory) must guess between two legitimate options; C1 (recall) knows.
+// The sandbox holds TWO auth backends that are DELIBERATELY SYMMETRIC in code —
+// same exported name, same shape, equally-plausible neutral doc comments, no
+// "canonical"/"legacy"/"deprecated" hint anywhere. So the correct choice is NOT
+// derivable by reading the repo (a strong tool-using agent can't reverse-engineer
+// a team decision that was never written down). The ONLY signal is the recalled
+// decision. This is what makes the result capability-independent.
+const CONTINUITY_LESSON =
+  "Decision from a prior session: for new endpoints, auth must use `getAuth` from 'src/auth/edgeAuth'. We migrated OFF 'src/auth/sessionAuth' because its server-side sessions broke our edge deploys. Both modules still exist and compile; edgeAuth is the sanctioned one.";
+const CONTINUITY_TASK =
+  "Task: add a login endpoint. This repo has more than one auth backend — inspect the code, then reply with ONLY the single `import` line you would use for authentication.";
+
+/** Build an isolated repo with two SYMMETRIC, equally-valid auth backends. Which
+ *  one is sanctioned is a team decision that appears NOWHERE in the code — only
+ *  in memory. Returns the repo path. */
+function buildContinuitySandbox(): string {
+  const repo = mkdtempSync(join(tmpdir(), "np-continuity-"));
+  const write = (rel: string, body: string) => {
+    const p = join(repo, rel);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, body);
+  };
+  // Symmetric: same export (`getAuth`), neutral descriptive comments, no hint of
+  // which is preferred. edgeAuth = token-based; sessionAuth = server sessions.
+  write("src/auth/edgeAuth.ts", "// Auth backend: stateless edge tokens.\nexport interface AuthCtx { userId: string }\nexport function getAuth(): AuthCtx { return { userId: '' }; }\n");
+  write("src/auth/sessionAuth.ts", "// Auth backend: server-side sessions.\nexport interface AuthCtx { userId: string }\nexport function getAuth(): AuthCtx { return { userId: '' }; }\n");
+  write("README.md", "# app\n\nAuth backends (both supported):\n- `src/auth/edgeAuth.ts` — `getAuth()`\n- `src/auth/sessionAuth.ts` — `getAuth()`\n\nAdd new endpoints under `src/routes/`.\n");
+  write("src/routes/.gitkeep", "");
+  Bun.spawnSync(["git", "init", "-q"], { cwd: repo });
+  Bun.spawnSync(["git", "add", "-A"], { cwd: repo });
+  Bun.spawnSync(["git", "-c", "user.email=b@np.dev", "-c", "user.name=b", "commit", "-q", "-m", "base"], { cwd: repo });
+  return repo;
+}
+
+// C0: the task alone, with no access to the prior session's decision.
+function continuityNoMemPrompt(): string {
+  return `You are a coding agent picking up work in an existing repo.\n\n${CONTINUITY_TASK}`;
+}
+// C1: the recalled decision routed in, mirroring routedPrompt()'s 📓 shape.
+function continuityRecalledPrompt(recalled: string): string {
+  return `You are a coding agent picking up work in an existing repo.\n📓 Recalled from a previous session: ${recalled}\n\n${CONTINUITY_TASK}`;
+}
+// Adherence = the chosen IMPORT targets the sanctioned backend (edgeAuth), not
+// sessionAuth. Score ONLY the actual `import ... from '...'` line(s), never prose
+// mentions (a correct reply may *name* sessionAuth to say it's avoiding it).
+function adheredContinuity(reply: string): boolean {
+  const imports = reply.match(/import[^;\n]*from\s*['"][^'"]+['"]/gi) ?? [];
+  if (imports.length === 0) return false; // no import line → didn't commit to a choice
+  const choseEdge = imports.some((l) => /edgeAuth/i.test(l));
+  const choseSession = imports.some((l) => /sessionAuth/i.test(l));
+  return choseEdge && !choseSession;
+}
+
+async function runTurn(agentId: string, prompt: string, label = "", cwd?: string): Promise<string> {
   const provider = getProvider(agentId);
   const model = process.env.NP_EVAL_MODEL;
   const args = provider.headlessArgs(prompt, model ? { model } : {});
-  const proc = Bun.spawn([provider.bin, ...args], { stdout: "pipe", stderr: "pipe" });
+  // `cwd` sandboxes a tool-enabled agent to a specific repo so its fact-checking
+  // sees the intended ground truth (used by the memory-continuity experiment).
+  const proc = Bun.spawn([provider.bin, ...args], { stdout: "pipe", stderr: "pipe", ...(cwd ? { cwd } : {}) });
   const out = await new Response(proc.stdout).text();
   await proc.exited;
   const reply = provider.parseResult(out).result ?? "";
@@ -207,8 +281,12 @@ async function main() {
         "  3. nerveplane install <agent>   # so it has the nerveplane MCP",
         "  4. bun run experiments/coordination-evals/live.ts",
         "",
-        "Experiments: (1) outcome-lift on the Tier-A scenarios with real agents (C0 vs C1);",
-        "(2) lost-in-the-middle — critical-fact adherence vs. position (dump) vs. routed (Nerveplane).",
+        "Experiments (select via NP_EVAL_MODE=all|positional|supersede|dilution|continuity):",
+        "  (1) outcome-lift on the Tier-A scenarios with real agents (C0 vs C1);",
+        "  (2) lost-in-the-middle — critical-fact adherence vs. position (dump) vs. routed (Nerveplane);",
+        "  (3) memory-continuity — a prior session records a project gotcha via the real",
+        "      remember()/recall() primitives (isolated bench DB); a fresh session repeats the",
+        "      mistake without it (C0) but avoids it when recalled (C1). Capability-independent.",
         "Run K≥5 seeds; append mean ± CI to results.md. Not a CI gate (costs money, nondeterministic).",
       ].join("\n") + "\n",
     );
@@ -216,7 +294,7 @@ async function main() {
   }
 
   const K = Number(process.env.NP_EVAL_SEEDS ?? 5);
-  const mode = process.env.NP_EVAL_MODE ?? "all"; // all | positional | supersede | dilution
+  const mode = process.env.NP_EVAL_MODE ?? "all"; // all | positional | supersede | dilution | continuity
   const run = (m: string) => mode === "all" || mode === m;
   const positions = ["start", "middle", "end"] as const;
   const dump: Record<string, number> = {};
@@ -269,6 +347,41 @@ async function main() {
     }
   }
 
+  // Memory continuity: a prior agent (session 1) records a project-specific
+  // gotcha with the REAL remember() primitive into an ISOLATED bench DB; a fresh
+  // later agent (session 2) either has it recall()'d into context (C1) or not
+  // (C0). Capability-independent: C0/C1 differ ONLY in the recalled lesson.
+  let contMistakeC0 = NaN;
+  let contMistakeC1 = NaN;
+  let contRecalled = "";
+  if (run("continuity")) {
+    initBenchDb(); // isolated throwaway SQLite — NEVER the user's real memory store
+    const repoId = "bench-repo";
+    // Ground-truth sandbox: both auth modules exist, so the agent runs INSIDE it
+    // and can verify the recalled decision (the canonical choice isn't in code).
+    const sandbox = buildContinuitySandbox();
+    // Session 1: the prior agent records the team decision with the real primitive.
+    await remember({
+      kind: "episode",
+      title: "auth convention: standardized on getAuth from authClient (legacy expressSession deprecated)",
+      body: CONTINUITY_LESSON,
+      tags: ["auth", "convention", "decision"],
+      repoId,
+      authorAgentId: "session1-agent",
+    });
+    // Session 2, C0 (no continuity): the decision was never available to this session.
+    let c0Adhere = 0;
+    for (let k = 0; k < K; k++) if (adheredContinuity(await runTurn(env.agent, continuityNoMemPrompt(), "cont-c0", sandbox))) c0Adhere++;
+    // Session 2, C1 (continuity): recall the top hit from the bench DB and route it in.
+    const hits = await recall("login endpoint auth import convention", { repoId }, { limit: 1 });
+    contRecalled = hits[0]?.body ?? "";
+    let c1Adhere = 0;
+    const c1Prompt = continuityRecalledPrompt(contRecalled);
+    for (let k = 0; k < K; k++) if (adheredContinuity(await runTurn(env.agent, c1Prompt, "cont-c1", sandbox))) c1Adhere++;
+    contMistakeC0 = 1 - c0Adhere / K; // repeated-mistake rate = 1 − adherence
+    contMistakeC1 = 1 - c1Adhere / K;
+  }
+
   process.stdout.write(
     "\n## H7 — context adherence (agent=" +
       env.agent +
@@ -279,11 +392,16 @@ async function main() {
           positional_recall: { dump_by_position: dump, nerveplane_routed: routedHits / K },
           superseded_decision: { dump: ssDump / K, nerveplane_routed: ssRouted / K },
           context_dilution_sweep: dilutionSweep,
+          memory_continuity: {
+            repeated_mistake_rate_c0_no_memory: contMistakeC0,
+            repeated_mistake_rate_c1_recalled: contMistakeC1,
+            recalled_lesson_present: contRecalled.length > 0,
+          },
         },
         null,
         2,
       ) +
-      "\n\npositional: dump vs routed (frontier models resist the dip). superseded: dump buries the UPDATE with a stale+recent distractor — frontier models can anchor on the wrong one; routed delivers the current decision.\n",
+      "\n\npositional: dump vs routed (frontier models resist the dip). superseded: dump buries the UPDATE with a stale+recent distractor — frontier models can anchor on the wrong one; routed delivers the current decision. continuity: C0 (no memory) repeats the mistake a prior session already discovered; C1 recalls that session's episode via the real remember/recall primitives — capability-independent, since C0/C1 differ only in the recalled lesson.\n",
   );
 }
 

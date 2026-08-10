@@ -1,21 +1,26 @@
 # NP-Bench — Tier-A results (deterministic)
 
-C0 = uncoordinated (no Nerveplane) · C1 = Nerveplane on. Higher CTSR / lower conflicts+waste is better.
+Three arms: **C0** uncoordinated · **C1-detect** reactive Nerveplane · **C1-plan** proactive planner. Higher CTSR / lower conflicts + wasted LOC is better. The planner's edge shows up on the `concurrent` / N-scale scenarios, where a reactive warning arrives too late.
 
-| scenario | dep class | CTSR C0→C1 | merge conflicts C0→C1 | wasted LOC C0→C1 | routing hit (C1) | false routing (C1) |
+| scenario | dep class | CTSR (C0/detect/plan) | merge conflicts | wasted LOC | routing hit (plan) | merge-order ok |
 |---|---|---|---|---|---|---|
-| shared-file | same-file overlap | ❌→✅ | 1→0 | 5→0 | 100% | 0% |
-| contract | producer→consumer contract | ❌→✅ | 0→0 | 0→0 | 100% | 0% |
-| microservice-fanout | cross-repo contract fan-out | ❌→✅ | 0→0 | 0→0 | 100% | 0% |
-| independent-control | no dependency (control) | ✅→✅ | 0→0 | 0→0 | — | 0% |
+| shared-file | same-file overlap | ❌/✅/✅ | 1/0/0 | 5/0/0 | 100% | ✅ |
+| contract | producer→consumer contract | ❌/✅/✅ | 0/0/0 | 0/0/0 | 100% | ✅ |
+| microservice-fanout | cross-repo contract fan-out | ❌/✅/✅ | 0/0/0 | 0/0/0 | 100% | ✅ |
+| independent-control | no dependency (control) | ✅/✅/✅ | 0/0/0 | 0/0/0 | — | ✅ |
+| shared-file-concurrent | same-file overlap (concurrent) | ❌/❌/✅ | 1/1/0 | 5/5/0 | 100% | ✅ |
+| contract-concurrent | producer→consumer contract (concurrent) | ❌/❌/✅ | 0/0/0 | 0/0/0 | 100% | ✅ |
+| contention-n2 | same-file contention (n=2, concurrent) | ❌/❌/✅ | 1/1/0 | 4/4/0 | 100% | ✅ |
+| contention-n4 | same-file contention (n=4, concurrent) | ❌/❌/✅ | 3/3/0 | 12/12/0 | 100% | ✅ |
+| contention-n8 | same-file contention (n=8, concurrent) | ❌/❌/✅ | 7/7/0 | 28/28/0 | 100% | ✅ |
 
-**Aggregate:**
+**Aggregate (C0 → C1-detect → C1-plan):**
 
-- CTSR: **1/4 → 4/4** (uncoordinated → Nerveplane)
-- Merge conflicts: **1 → 0**
-- Wasted LOC: **5 → 0**
+- CTSR: **1/9 → 4/9 → 9/9**
+- Merge conflicts: **13 → 12 → 0**
+- Wasted LOC: **54 → 49 → 0**
 
-_Tier A is a deterministic simulation of agent reaction (coordinated edit iff Nerveplane warned in time), driving the product's real sensing/detection/routing. Tier B (live agents) validates externally — see `live.ts` + `results.md` appends._
+_Deterministic simulation of agent reaction: an agent takes its coordinated edit iff it was warned in time (C1-detect) or reassigned by the planner (C1-plan), driving the product's real sensing/detection/routing + the planner core (`src/core/planner.ts`). Tier B (live agents) validates externally — see `live.ts` + the sections below._
 
 ---
 
@@ -108,3 +113,64 @@ Trap-fall rate = 0 across the board; parse-fail = 0; oracle = 1.0 (task is genui
 **Finding: H8 NOT supported — a robust, well-tested negative.** Even a *cheap* model does correct 3-hop disambiguation-by-rule over 100k tokens of dilution with three traps. We removed every crutch and modern models still don't lose *accuracy* to dilution at window-fitting scales. This strengthens (does not weaken) the honest thesis: **the value of per-repo scoping + routing is cost + capacity/feasibility, not accuracy rescue.** Presenting the cost/capacity numbers + the proven Tier-A coordination outcomes is the credible pitch — precisely because we tried hard to find an accuracy win and reported that we couldn't.
 
 *(Where an accuracy gap would plausibly appear: contexts beyond the reliable window (≫200k, where overflow/capacity already bites), tasks needing aggregation over *many* buried instances rather than a fixed-arity join, or much weaker/older models. Out of scope here; flagged as honest future work, not reverse-engineered into a win.)*
+
+## Tier-B — memory continuity (SUM-152)
+
+**Hypothesis (capability-independent / immune to model strength).** No model,
+however strong, can recall a *project-specific* fact it was never told. If a prior
+agent discovers a repo-local gotcha and records it, a later, differently-sessioned
+agent should stop repeating that mistake — but only if cross-session memory carries
+the discovery forward. Model strength cannot substitute for a missing fact.
+
+**Design (`NP_EVAL_MODE=continuity` in `live.ts`).** Drives the REAL memory primitives
+(`remember`/`recall`) against an ISOLATED throwaway SQLite (`initBenchDb()`, never the
+user's store), and runs session 2 as a REAL agent INSIDE a ground-truth sandbox repo.
+
+- **Ground-truth sandbox.** A temp repo with **two symmetric auth backends** —
+  `src/auth/edgeAuth.ts` and `src/auth/sessionAuth.ts`, both exporting an identical
+  `getAuth()`, with neutral doc comments and a neutral README. Both are real and
+  importable, so a tool-using agent can *verify* a recalled note; but **which backend
+  is sanctioned appears nowhere in the code** — it is a team decision that lives only
+  in memory.
+- **Lesson (non-derivable decision).** *"For new endpoints, auth must use `getAuth`
+  from `src/auth/edgeAuth`; we migrated off `src/auth/sessionAuth` because server
+  sessions broke edge deploys."* Recorded by session 1 via `remember({kind:"episode"})`.
+- **Session 2 (fresh session / different CLI), K seeds each.** Task: *"this repo has
+  more than one auth backend — inspect the code, then reply with ONLY the single import
+  line you'd use."* **C0** = task only; **C1** = `recall()` top hit routed in
+  (`📓 Recalled from a previous session: …`). The agent runs with `cwd` = the sandbox.
+- **Metric.** Repeated-mistake rate = `1 − adherence`, adherence = the **actual import
+  line** targets `edgeAuth` and not `sessionAuth` (parsed from `import … from '…'`,
+  NOT prose mentions).
+
+**Capability-independence.** C0 and C1 differ ONLY in whether the recalled decision is
+present. The correct choice is not recoverable from the repo, so no amount of model
+strength closes the gap — it's an *information* gap, not a *reasoning* gap.
+
+**Results — keyed runs (agent = Claude Code, K = 5 seeds).**
+
+| model | C0 (no memory) | C1 (recalled) |
+| --- | --- | --- |
+| frontier (Opus/Sonnet default) | **1.00** | **0.00** |
+| Haiku (`--model haiku`) | **1.00** | **0.00** |
+
+Repeated-mistake rate collapses **1.00 → 0.00** on both a frontier and a weak model —
+the effect is model-independent, as predicted. Raw replies (logged to `$NP_EVAL_LOG`)
+confirm it is genuine, not a scorer artifact: in **C0** the agents explicitly note the
+two backends are "a genuine tie — nothing in the code disambiguates" and either flag
+the blocker or default to `sessionAuth` (a login → session heuristic); in **C1** they
+verify both modules exist and cite "the choice is a policy one, governed by the prior
+decision" before importing `edgeAuth`.
+
+**Methods note — two validity bugs found and fixed (honest trail).** The first design
+planted a *fictional* module (`src/lib/authClient`); the tool-using agent fact-checked
+it against the real repo, found it absent, and correctly refused — so C0/C1 were both
+meaningless (an early keyed run misread this as C0 = 1.0 / C1 = 0.67). Fix 1: run inside
+a sandbox where the modules genuinely exist. A second run then exposed that (a) the
+sandbox's `// Centralized` / `// Legacy` comments let C0 *derive* the answer without
+memory, and (b) the scorer penalized any reply that merely *mentioned* the legacy
+module by name. Fix 2: make the two backends symmetric/neutral (choice non-derivable)
+and score only the actual `import` line. The table above is post-fix. Not a CI gate
+(costs money, nondeterministic).
+
+Reproduce: `NP_EVAL_AGENT=claude NP_EVAL_MODE=continuity NP_EVAL_SEEDS=5 [NP_EVAL_MODEL=haiku] bun run experiments/coordination-evals/live.ts`

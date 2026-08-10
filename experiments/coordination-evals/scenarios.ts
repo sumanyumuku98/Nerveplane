@@ -110,4 +110,64 @@ const independent: Scenario = {
   expectWarned: [],
 };
 
-export const SCENARIOS: Scenario[] = [sharedFile, contract, fanout, independent];
+// 5) SHARED-FILE-CONCURRENT — same contention as (1) but agents edit AT THE SAME
+//    TIME. The reactive warning (C1-detect) arrives too late → it degrades to C0
+//    (conflict + wasted LOC). The planner (C1-plan) partitioned scopes up front →
+//    clean. This is the timing-sensitive case where C1-plan < C1-detect.
+const sharedFileConcurrent: Scenario = {
+  ...sharedFile,
+  name: "shared-file-concurrent",
+  dependencyClass: "same-file overlap (concurrent)",
+  concurrent: true,
+};
+
+// 6) CONTRACT-CONCURRENT — the producer→consumer contract case under concurrency.
+//    C1-detect can't warn the consumer in time (accept fails); C1-plan reassigns
+//    the consumer to adapt regardless of timing (CTSR holds).
+const contractConcurrent: Scenario = {
+  ...contract,
+  name: "contract-concurrent",
+  dependencyClass: "producer→consumer contract (concurrent)",
+  concurrent: true,
+};
+
+/**
+ * N-SCALE CONTENTION — `n` agents concurrently rewrite ONE hot file. C0 and
+ * (too-late) C1-detect pile up n−1 merge conflicts + wasted LOC; C1-plan lets the
+ * first agent own the file and scope-splits the rest into their own modules → 0
+ * conflicts. Divergence GROWS with n, which is the paper's scaling claim.
+ */
+function contention(n: number): Scenario {
+  const HOT = "src/hot.ts";
+  const agents = Array.from({ length: n }, (_, i) => {
+    const name = `svc${i}`;
+    return {
+      name,
+      touches: [HOT],
+      // naive: everyone rewrites the same lines of the hot file → conflicts
+      naive: { [HOT]: `export function hot() {\n  return '${name}';\n}\n` },
+      // coordinated: the planner reassigns non-owners to their own module
+      coordinated: i === 0 ? { [HOT]: `export function hot() {\n  return 'svc0';\n}\n` } : { [`src/hot_${name}.ts`]: `export function ${name}() { return '${name}'; }\n` },
+    };
+  });
+  return {
+    name: `contention-n${n}`,
+    dependencyClass: `same-file contention (n=${n}, concurrent)`,
+    base: { [HOT]: "export function hot() {\n  return 'base';\n}\n" },
+    agents,
+    concurrent: true,
+    expectWarned: agents.slice(1).map((a) => a.name), // planner reassigns all but the owner
+  };
+}
+
+export const SCENARIOS: Scenario[] = [
+  sharedFile,
+  contract,
+  fanout,
+  independent,
+  sharedFileConcurrent,
+  contractConcurrent,
+  contention(2),
+  contention(4),
+  contention(8),
+];

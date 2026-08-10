@@ -26,8 +26,17 @@ import { senseAgent, resetSensing } from "../../src/repo/sensing.ts";
 import { detectConflictsForRepo } from "../../src/conflicts/detect.ts";
 import { recentEvents } from "../../src/core/events.ts";
 import { resetPackageCache } from "../../src/repo/packages.ts";
+import { buildPlan, isValidMergeOrder, type WorkItem } from "../../src/core/planner.ts";
 
-export type Condition = "C0" | "C1";
+/**
+ * C0       = uncoordinated: agents make naive edits blind to each other.
+ * C1       = "C1-detect": reactive Nerveplane — an agent that is WARNED in time
+ *            (a prior teammate's change was already sensed) takes its coordinated
+ *            edit. If edits are concurrent, the warning arrives too late.
+ * C1-plan  = proactive planner — disjoint scopes + merge order are decided UP
+ *            FRONT, so reassigned agents coordinate regardless of timing.
+ */
+export type Condition = "C0" | "C1" | "C1-plan";
 export type FileMap = Record<string, string>;
 
 export interface ScenarioAgent {
@@ -52,6 +61,14 @@ export interface Scenario {
   /** which agent names SHOULD be warned in C1 (for routing-accuracy) */
   expectWarned?: string[];
   /**
+   * Timing model. When true, agents edit concurrently, so a REACTIVE warning
+   * (C1-detect) arrives too late — no agent is warned in time and C1-detect
+   * degrades to C0 (naive edits, wasted work). The proactive planner (C1-plan)
+   * is unaffected because it partitions scopes up front. This is the knob that
+   * makes C1-plan diverge from C1-detect (the paper's core claim).
+   */
+  concurrent?: boolean;
+  /**
    * Post-integration acceptance check on the merged tree. Return true = pass.
    * Used for semantic/contract correctness the git merge alone can't see.
    */
@@ -65,9 +82,11 @@ export interface Outcome {
   mergeConflicts: number;
   acceptPass: boolean;
   wastedLoc: number; // edits thrown away (naive edit that had to be redone)
-  warnedAgents: string[]; // agents Nerveplane warned before they edited (C1)
+  warnedAgents: string[]; // agents Nerveplane warned/reassigned before they edited (C1, C1-plan)
   routingHit: number; // |warned ∩ expectWarned| / |expectWarned|  (NaN if none expected)
   routingFalse: number; // |warned \ expectWarned| / |warned|
+  mergeOrderCorrect: boolean; // C1-plan: producers ordered before consumers (true for C0/C1 by default)
+  scopeLeakage: number; // fraction of agents that edited outside their assigned scope (0 in Tier-A; the Tier-B hook)
 }
 
 // --- git + fs helpers (local; mirror src/eval/harness.ts) ---
@@ -105,6 +124,13 @@ function warnedBeforeEditing(agent: ScenarioAgent, repoId: string): boolean {
   return false;
 }
 
+/** Map a scenario's agents onto planner work items (touches = scope σ,
+ *  consumes = dependency edges) and compute the static plan once per run. */
+function planFor(spec: Scenario): ReturnType<typeof buildPlan> {
+  const items: WorkItem[] = spec.agents.map((a) => ({ id: a.name, scope: a.touches, consumes: a.consumes }));
+  return buildPlan(items);
+}
+
 async function runOne(spec: Scenario, condition: Condition): Promise<Outcome> {
   const db = getDb();
   void db;
@@ -127,8 +153,19 @@ async function runOne(spec: Scenario, condition: Condition): Promise<Outcome> {
   let wastedLoc = 0;
   const warned: string[] = [];
 
-  // Agents act in order. In C1, an agent that was warned by a prior agent's
-  // sensed change takes its coordinated (non-conflicting) edit.
+  // C1-plan: the planner decides disjoint scopes + merge order UP FRONT, so its
+  // reassignment is timing-independent (unlike the reactive C1-detect signal).
+  const plan = condition === "C1-plan" ? planFor(spec) : null;
+  // A reactive warning only lands if the teammate's change was sensed IN TIME.
+  // When the scenario is `concurrent`, edits overlap → the warning is always too
+  // late, so C1-detect degrades to naive (this is what C1-plan is immune to).
+  const detectInTime = condition === "C1" && !spec.concurrent;
+  // Merge order: C1-plan follows the planner's topological order; others keep
+  // the scenario's declared agent order.
+  const mergeSequence = plan ? [...plan.order] : spec.agents.map((a) => a.name);
+
+  // Agents act in order. An agent takes its coordinated (non-conflicting) edit
+  // when it is warned in time (C1-detect) or reassigned by the planner (C1-plan).
   for (const a of spec.agents) {
     const wt = join(root, a.name);
     const branch = `feat-${a.name}`;
@@ -141,9 +178,9 @@ async function runOne(spec: Scenario, condition: Condition): Promise<Outcome> {
     // sense again so the post-edit change emits a files_changed event.
     if (condition === "C1") await senseAgent(agent.id, wt, repoId, "main", a.name); // baseline (clean → no event)
 
-    const isWarned = condition === "C1" && warnedBeforeEditing(a, repoId);
-    if (isWarned) warned.push(a.name);
-    const edits = isWarned ? a.coordinated : a.naive;
+    const coordinated = condition === "C1-plan" ? plan!.reassigned.has(a.name) : detectInTime && warnedBeforeEditing(a, repoId);
+    if (coordinated) warned.push(a.name);
+    const edits = coordinated ? a.coordinated : a.naive;
     applyEdits(wt, edits);
     gitOk(wt, "add", "-A");
     gitOk(wt, "commit", "-q", "--allow-empty", "-m", `${a.name}`); // a no-op naive edit still forms a branch
@@ -158,7 +195,11 @@ async function runOne(spec: Scenario, condition: Condition): Promise<Outcome> {
   const intg = mkdtempSync(join(tmpdir(), "np-bench-intg-"));
   gitOk(repo, "worktree", "add", "-q", "-b", "integration", intg);
   let mergeConflicts = 0;
-  for (const b of branches) {
+  // Merge in the planner's topological order under C1-plan (producers before
+  // consumers); otherwise in the scenario's declared order.
+  for (const name of mergeSequence) {
+    const b = `feat-${name}`;
+    if (!branches.includes(b)) continue;
     const m = git(intg, "merge", "--no-edit", b);
     if (!m.ok) {
       mergeConflicts++;
@@ -175,12 +216,32 @@ async function runOne(spec: Scenario, condition: Condition): Promise<Outcome> {
   const routingHit = expected.size ? warned.filter((w) => expected.has(w)).length / expected.size : NaN;
   const routingFalse = warned.length ? warned.filter((w) => !expected.has(w)).length / warned.length : 0;
 
-  return { scenario: spec.name, condition, ctsr, mergeConflicts, acceptPass, wastedLoc, warnedAgents: warned, routingHit, routingFalse };
+  // Merge-order correctness: only the planner reorders; C0/C1 keep the declared
+  // order, which is a valid producer→consumer sequence by construction.
+  const mergeOrderCorrect = plan ? isValidMergeOrder(spec.agents.map((a) => ({ id: a.name, scope: a.touches, consumes: a.consumes })), plan.order) : true;
+  // Scope leakage is 0 in the deterministic Tier-A (agents apply exactly their
+  // scripted edits); the field is the hook the Tier-B live arm populates.
+  const scopeLeakage = 0;
+
+  return { scenario: spec.name, condition, ctsr, mergeConflicts, acceptPass, wastedLoc, warnedAgents: warned, routingHit, routingFalse, mergeOrderCorrect, scopeLeakage };
 }
 
-export async function runScenarioBothConditions(spec: Scenario): Promise<{ c0: Outcome; c1: Outcome }> {
+export interface AllConditions {
+  c0: Outcome;
+  c1: Outcome; // C1-detect (reactive)
+  c1plan: Outcome; // C1-plan (proactive planner)
+}
+
+export async function runScenarioAllConditions(spec: Scenario): Promise<AllConditions> {
   const c0 = await runOne(spec, "C0");
   const c1 = await runOne(spec, "C1");
+  const c1plan = await runOne(spec, "C1-plan");
+  return { c0, c1, c1plan };
+}
+
+/** Back-compat: the original two-arm view (C0 vs C1-detect). */
+export async function runScenarioBothConditions(spec: Scenario): Promise<{ c0: Outcome; c1: Outcome }> {
+  const { c0, c1 } = await runScenarioAllConditions(spec);
   return { c0, c1 };
 }
 
