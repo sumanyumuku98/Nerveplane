@@ -91,3 +91,22 @@ test("worktree updatedAt advances only on real changes, not every poll", async (
   await senseAgent("agent_upd", dir, "repo_upd", "main", "tester");
   expect(readUpdatedAt()).toBe(t1);
 });
+
+test("a daemon restart (lost in-memory snapshot) does not re-arm updatedAt for an unchanged set", async () => {
+  const dir = makeRepo();
+  resetSensing();
+  const readUpdatedAt = () =>
+    getDb().select().from(agentWorktreeState).where(eq(agentWorktreeState.agentId, "agent_restart")).get()?.updatedAt;
+
+  writeFileSync(join(dir, "g.ts"), "export const g = 1;\n");
+  await senseAgent("agent_restart", dir, "repo_restart", "main", "tester"); // baseline with the change
+  const before = readUpdatedAt();
+  expect(before).toBeTruthy();
+
+  // Simulate a daemon restart: in-memory snapshots are gone, but the DB row persists.
+  resetSensing();
+  await Bun.sleep(5);
+  await senseAgent("agent_restart", dir, "repo_restart", "main", "tester");
+  // Seeded from the persisted row → same set → updatedAt preserved (no re-arm).
+  expect(readUpdatedAt()).toBe(before);
+});
