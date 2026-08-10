@@ -43,20 +43,30 @@ function writeFileMk(path: string, content: string): void {
   writeFileSync(path, content);
 }
 
-// --- scenario: two agents extend the same report module (same-file contention) ---
+// --- scenarios ---
 interface LiveAgent {
   name: string;
-  scope: string[]; // predicted files (σ) — feeds the planner
+  scope: string[]; // predicted files (σ) it will WRITE — feeds the planner
+  consumes?: string[]; // contract files it depends on being current
   task: string; // what the agent is asked to do
 }
 interface LiveScenario {
   name: string;
   base: Record<string, string>;
   agents: LiveAgent[];
-  /** merged tree passes iff both capabilities landed. */
+  /**
+   * The specifics of the producer's contract change. In C1-plan this is what the
+   * planner surfaces to the consumer up front; in C1-detect the consumer gets only
+   * a vague "it may be changing" (no specifics); in C0 nothing.
+   */
+  contractNote?: string;
+  /** merged tree passes iff the scenario's success condition holds. */
   accept: (repo: string) => boolean;
 }
 
+// (1) SAME-FILE contention — measures SCOPE-LEAKAGE (does a reassigned agent
+// respect "don't touch the owned file"?). Real agents make additive edits, so
+// this rarely conflicts at the git level; it's the leakage probe, not outcome.
 const REPORT_BASE = "export function report(): string {\n  return 'base';\n}\n";
 const sharedFile: LiveScenario = {
   name: "shared-file-live",
@@ -65,7 +75,6 @@ const sharedFile: LiveScenario = {
     { name: "csv", scope: ["src/report.ts"], task: "Add a CSV export capability to the report module in src/report.ts (export a `csv()` function and have report() be able to use it)." },
     { name: "pdf", scope: ["src/report.ts"], task: "Add a PDF export capability for the report (export a `pdf()` function)." },
   ],
-  // pass = both csv and pdf capabilities exist somewhere in src/, tree merged cleanly
   accept: (repo) => {
     const files = ["src/report.ts", "src/report_pdf.ts", "src/pdf.ts", "src/report_csv.ts", "src/csv.ts"];
     const blob = files.map((f) => (existsSync(join(repo, f)) ? readFileSync(join(repo, f), "utf8") : "")).join("\n");
@@ -73,16 +82,68 @@ const sharedFile: LiveScenario = {
   },
 };
 
+// (2) CONTRACT-SEMANTIC — the producer renames the money field on the invoice
+// contract (`amount` dollars → `amountCents` integer cents); the consumer, working
+// off the OLD contract in its own worktree, renders the total. git merges cleanly
+// (different files), but the consumer is SEMANTICALLY BROKEN unless it adapts to
+// the new field. This is the baseline C0 genuinely FAILS — the outcome probe.
+const CONTRACT_OLD = "export interface Invoice { id: string; amount: number /* US dollars */ }\nexport const example: Invoice = { id: 'i1', amount: 12.5 };\n";
+const contract: LiveScenario = {
+  name: "contract-semantic-live",
+  base: {
+    "api/contract.ts": CONTRACT_OLD,
+    "web/invoice.ts": "import type { Invoice } from '../api/contract';\nexport function renderTotal(inv: Invoice): string {\n  return `$0.00`; // TODO: render the invoice total\n}\n",
+  },
+  agents: [
+    {
+      name: "payments",
+      scope: ["api/contract.ts"],
+      task: "In api/contract.ts, MIGRATE the invoice money field: replace `amount` (a float in US dollars) with `amountCents` (an integer number of cents). Update the `Invoice` interface and the `example` value accordingly. This is a breaking contract change.",
+    },
+    {
+      name: "web",
+      scope: ["web/invoice.ts"],
+      consumes: ["api/contract.ts"],
+      task: "In web/invoice.ts, implement `renderTotal(inv)` so it returns the invoice total as a US dollar string like `$12.50`. Use the invoice contract in api/contract.ts.",
+    },
+  ],
+  contractNote: "payments is renaming the invoice money field `amount` (float dollars) to `amountCents` (integer cents) in api/contract.ts. Consume `amountCents` and divide by 100 to render dollars.",
+  // pass = the merged consumer renders from the NEW field (amountCents), not the
+  // removed `amount`. That's only possible if it adapted to the contract change.
+  accept: (repo) => {
+    const web = existsSync(join(repo, "web/invoice.ts")) ? readFileSync(join(repo, "web/invoice.ts"), "utf8") : "";
+    const api = existsSync(join(repo, "api/contract.ts")) ? readFileSync(join(repo, "api/contract.ts"), "utf8") : "";
+    const producerMigrated = /amountCents/.test(api) && !/\bamount\b(?!Cents)/.test(api);
+    const consumerAdapted = /amountCents/.test(web); // references the new field
+    const consumerStale = /\bamount\b(?!Cents)/.test(web); // still references the removed field
+    return producerMigrated && consumerAdapted && !consumerStale;
+  },
+};
+
+const SCENARIOS: LiveScenario[] = [sharedFile, contract];
+
+interface Assignment {
+  own: string[];
+  forbidden: string[]; // same-file: files another agent owns → must not edit
+  reassigned: boolean;
+  adaptTo?: string; // contract-consumer: the specific change to adapt to (C1-plan)
+}
+
 /** Per-arm prompt for one agent. C1-plan gets the planner's assignment. */
-function promptFor(arm: Arm, agent: LiveAgent, scn: LiveScenario, assignment: { own: string[]; forbidden: string[]; reassigned: boolean } | null): string {
+function promptFor(arm: Arm, agent: LiveAgent, scn: LiveScenario, assignment: Assignment | null): string {
   const preamble = `You are one of several coding agents working concurrently in this repo. Make ONLY the change described, using the smallest edit. Do not run git. Do not touch unrelated files. When done, reply with the file(s) you changed.\n\nTask: ${agent.task}`;
   if (arm === "C0") return preamble;
   if (arm === "C1-detect") {
     const other = scn.agents.find((a) => a.name !== agent.name)!;
-    return `${preamble}\n\n⚠️ Nerveplane notice (reactive): another agent (${other.name}) may also be modifying ${agent.scope.join(", ")}. Heads up — coordinate to avoid a conflict if you can.`;
+    const target = (agent.consumes && agent.consumes.length ? agent.consumes : agent.scope).join(", ");
+    // Reactive + vague: a teammate is touching a file you depend on, no specifics.
+    return `${preamble}\n\n⚠️ Nerveplane notice (reactive): another agent (${other.name}) may also be modifying ${target}. Heads up — it might change while you work.`;
   }
-  // C1-plan
+  // C1-plan — explicit, up-front assignment.
   const a = assignment!;
+  if (a.adaptTo) {
+    return `${preamble}\n\n📋 Coordination plan (assigned up front): the contract you depend on (${(agent.consumes ?? []).join(", ")}) is being changed by a teammate — ${a.adaptTo} Write your code against the NEW shape. Your change merges AFTER the producer's.`;
+  }
   const ownLine = a.own.length ? `You OWN: ${a.own.join(", ")}.` : "You have no exclusively-owned files.";
   const forbid = a.forbidden.length ? ` Do NOT edit: ${a.forbidden.join(", ")} (another agent owns it). Put your addition in a NEW file instead.` : "";
   return `${preamble}\n\n📋 Coordination plan (assigned up front): ${ownLine}${forbid}`;
@@ -128,7 +189,7 @@ async function runArm(scn: LiveScenario, arm: Arm, agentId: string): Promise<Out
 
   // Plan (only used by C1-plan): owner keeps the contested file; others are told
   // to work in a new module.
-  const items: WorkItem[] = scn.agents.map((a) => ({ id: a.name, scope: a.scope }));
+  const items: WorkItem[] = scn.agents.map((a) => ({ id: a.name, scope: a.scope, consumes: a.consumes }));
   const plan = buildPlan(items);
 
   const root = mkdtempSync(join(tmpdir(), "np-live-wt-"));
@@ -142,14 +203,19 @@ async function runArm(scn: LiveScenario, arm: Arm, agentId: string): Promise<Out
     const branch = `feat-${a.name}`;
     gitOk(repo, "worktree", "add", "-q", "-b", branch, wt);
 
-    let assignment: { own: string[]; forbidden: string[]; reassigned: boolean } | null = null;
+    let assignment: Assignment | null = null;
     if (arm === "C1-plan") {
       const reassigned = plan.reassigned.has(a.name);
-      // owner's scope minus this agent's = files this agent must not touch
-      const forbidden = reassigned ? a.scope.slice() : [];
-      const own = reassigned ? [] : a.scope.slice();
-      assignment = { own, forbidden, reassigned };
-      if (forbidden.length) leakDenom++;
+      const isConsumer = reassigned && (a.consumes?.length ?? 0) > 0;
+      if (isConsumer) {
+        // contract consumer: adapt to the producer's change (no forbidden file)
+        assignment = { own: a.scope.slice(), forbidden: [], reassigned, adaptTo: scn.contractNote };
+      } else {
+        // same-file contention: non-owner must not edit the contested file
+        const forbidden = reassigned ? a.scope.slice() : [];
+        assignment = { own: reassigned ? [] : a.scope.slice(), forbidden, reassigned };
+        if (forbidden.length) leakDenom++;
+      }
     }
 
     const reply = await runAgent(agentId, promptFor(arm, a, scn, assignment), wt, `${scn.name}-${arm}-${a.name}`);
@@ -218,31 +284,36 @@ async function main() {
     return;
   }
   const K = Number(process.env.NP_EVAL_SEEDS ?? 5);
-  const scn = sharedFile;
-  const rows: Record<Arm, Outcome[]> = { C0: [], "C1-detect": [], "C1-plan": [] };
-  for (let k = 0; k < K; k++) {
-    for (const arm of ARMS) rows[arm].push(await runArm(scn, arm, agent));
+  // NP_EVAL_SCENARIO=shared-file|contract restricts the run (to control cost).
+  const filter = process.env.NP_EVAL_SCENARIO;
+  const scenarios = SCENARIOS.filter((s) => !filter || s.name.includes(filter));
+
+  for (const scn of scenarios) {
+    const rows: Record<Arm, Outcome[]> = { C0: [], "C1-detect": [], "C1-plan": [] };
+    for (let k = 0; k < K; k++) {
+      for (const arm of ARMS) rows[arm].push(await runArm(scn, arm, agent));
+    }
+    const summary = ARMS.map((arm) => {
+      const os = rows[arm];
+      const denom = os.reduce((n, o) => n + o.leakDenom, 0);
+      const leakCount = os.map((o) => o.scopeLeaks).filter((x) => !Number.isNaN(x)).reduce((a, b) => a + b, 0);
+      return {
+        arm,
+        ctsr_rate: mean(os.map((o) => (o.ctsr ? 1 : 0))),
+        merge_conflicts_mean: mean(os.map((o) => o.mergeConflicts)),
+        merge_conflicts_ci95: Number(ci95(os.map((o) => o.mergeConflicts)).toFixed(3)),
+        wasted_loc_mean: mean(os.map((o) => o.wastedLoc)),
+        scope_leakage_rate: arm === "C1-plan" && denom ? leakCount / denom : null,
+      };
+    });
+    process.stdout.write(
+      `\n## Tier-B live multi-agent (agent=${agent}${process.env.NP_EVAL_MODEL ? `, model=${process.env.NP_EVAL_MODEL}` : ""}, scenario=${scn.name}, K=${K}) — raw replies in ${REPLY_LOG}\n` +
+        JSON.stringify(summary, null, 2) +
+        "\n",
+    );
   }
-
-  const summary = ARMS.map((arm) => {
-    const os = rows[arm];
-    const leaks = os.map((o) => o.scopeLeaks).filter((x) => !Number.isNaN(x));
-    const denom = os.reduce((n, o) => n + o.leakDenom, 0);
-    const leakCount = leaks.reduce((a, b) => a + b, 0);
-    return {
-      arm,
-      ctsr_rate: mean(os.map((o) => (o.ctsr ? 1 : 0))),
-      merge_conflicts_mean: mean(os.map((o) => o.mergeConflicts)),
-      merge_conflicts_ci95: ci95(os.map((o) => o.mergeConflicts)),
-      wasted_loc_mean: mean(os.map((o) => o.wastedLoc)),
-      scope_leakage_rate: arm === "C1-plan" ? (denom ? leakCount / denom : 0) : null,
-    };
-  });
-
   process.stdout.write(
-    `\n## Tier-B live multi-agent (agent=${agent}${process.env.NP_EVAL_MODEL ? `, model=${process.env.NP_EVAL_MODEL}` : ""}, scenario=${scn.name}, K=${K}) — raw replies in ${REPLY_LOG}\n` +
-      JSON.stringify(summary, null, 2) +
-      "\n\nHypothesis: CTSR C1-plan > C1-detect ≥ C0; scope_leakage_rate near 0 means agents RESPECT the planner's assignment (the structural win is real). High leakage ⇒ planner degrades to a detector.\n",
+    "\nHypothesis: CTSR C1-plan > C1-detect ≥ C0 (outcome lift on the contract scenario); scope_leakage_rate ≈ 0 means agents RESPECT the planner's assignment (shared-file scenario). High leakage ⇒ planner degrades to a detector.\n",
   );
 }
 
