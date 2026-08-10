@@ -4,7 +4,9 @@ _Date: 2026-08-10 · Author: research agent · Linear: SUM-151 (E1 gate) · Targ
 
 ## Decision
 
-**GO — full paper, submitted to the "Who Verifies the Agents?" (Verify Agents) workshop as the primary venue**, with Meta-Agents as the fallback framing. The decision is **contingent** on the SUM-150 sweeps holding the live effect at larger N and ≥1 additional model family; if they materially weaken it, downgrade to a **short/findings** paper (same venue) rather than abandon — the deterministic + memory-continuity results already stand on their own.
+**GO — full paper, submitted to the "Who Verifies the Agents?" (Verify Agents) workshop as the primary venue**, with Meta-Agents as the fallback framing.
+
+**UPDATE (2026-08-10, SUM-177): the primary contingency is now RESOLVED.** The live effect-by-N fan-out sweep (frontier, K=3, N∈{2,4,8}) holds flat: C0 and C1-detect adapt **0%** of consumers at every N, C1-plan adapts **100%** — so the absolute count of broken consumers under no-coordination grows linearly with N while the planner holds every one. Combined with the deterministic N-scaling and the contract-semantic live result, the full-paper claim is well-supported. Remaining strengtheners (a second model family, wider K/CIs; SUM-177 items 2-3) are *nice-to-have generality*, not load-bearing — their absence would not by itself downgrade the paper. The GO is **affirmed**; downgrade to short/findings only if a second model family were to overturn the effect (not indicated).
 
 ## Evidence on the table
 
