@@ -137,7 +137,7 @@ const contractConcurrent: Scenario = {
  * first agent own the file and scope-splits the rest into their own modules → 0
  * conflicts. Divergence GROWS with n, which is the paper's scaling claim.
  */
-function contention(n: number): Scenario {
+export function contention(n: number): Scenario {
   const HOT = "src/hot.ts";
   const agents = Array.from({ length: n }, (_, i) => {
     const name = `svc${i}`;
