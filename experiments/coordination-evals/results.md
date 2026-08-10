@@ -1,21 +1,26 @@
 # NP-Bench — Tier-A results (deterministic)
 
-C0 = uncoordinated (no Nerveplane) · C1 = Nerveplane on. Higher CTSR / lower conflicts+waste is better.
+Three arms: **C0** uncoordinated · **C1-detect** reactive Nerveplane · **C1-plan** proactive planner. Higher CTSR / lower conflicts + wasted LOC is better. The planner's edge shows up on the `concurrent` / N-scale scenarios, where a reactive warning arrives too late.
 
-| scenario | dep class | CTSR C0→C1 | merge conflicts C0→C1 | wasted LOC C0→C1 | routing hit (C1) | false routing (C1) |
+| scenario | dep class | CTSR (C0/detect/plan) | merge conflicts | wasted LOC | routing hit (plan) | merge-order ok |
 |---|---|---|---|---|---|---|
-| shared-file | same-file overlap | ❌→✅ | 1→0 | 5→0 | 100% | 0% |
-| contract | producer→consumer contract | ❌→✅ | 0→0 | 0→0 | 100% | 0% |
-| microservice-fanout | cross-repo contract fan-out | ❌→✅ | 0→0 | 0→0 | 100% | 0% |
-| independent-control | no dependency (control) | ✅→✅ | 0→0 | 0→0 | — | 0% |
+| shared-file | same-file overlap | ❌/✅/✅ | 1/0/0 | 5/0/0 | 100% | ✅ |
+| contract | producer→consumer contract | ❌/✅/✅ | 0/0/0 | 0/0/0 | 100% | ✅ |
+| microservice-fanout | cross-repo contract fan-out | ❌/✅/✅ | 0/0/0 | 0/0/0 | 100% | ✅ |
+| independent-control | no dependency (control) | ✅/✅/✅ | 0/0/0 | 0/0/0 | — | ✅ |
+| shared-file-concurrent | same-file overlap (concurrent) | ❌/❌/✅ | 1/1/0 | 5/5/0 | 100% | ✅ |
+| contract-concurrent | producer→consumer contract (concurrent) | ❌/❌/✅ | 0/0/0 | 0/0/0 | 100% | ✅ |
+| contention-n2 | same-file contention (n=2, concurrent) | ❌/❌/✅ | 1/1/0 | 4/4/0 | 100% | ✅ |
+| contention-n4 | same-file contention (n=4, concurrent) | ❌/❌/✅ | 3/3/0 | 12/12/0 | 100% | ✅ |
+| contention-n8 | same-file contention (n=8, concurrent) | ❌/❌/✅ | 7/7/0 | 28/28/0 | 100% | ✅ |
 
-**Aggregate:**
+**Aggregate (C0 → C1-detect → C1-plan):**
 
-- CTSR: **1/4 → 4/4** (uncoordinated → Nerveplane)
-- Merge conflicts: **1 → 0**
-- Wasted LOC: **5 → 0**
+- CTSR: **1/9 → 4/9 → 9/9**
+- Merge conflicts: **13 → 12 → 0**
+- Wasted LOC: **54 → 49 → 0**
 
-_Tier A is a deterministic simulation of agent reaction (coordinated edit iff Nerveplane warned in time), driving the product's real sensing/detection/routing. Tier B (live agents) validates externally — see `live.ts` + `results.md` appends._
+_Deterministic simulation of agent reaction: an agent takes its coordinated edit iff it was warned in time (C1-detect) or reassigned by the planner (C1-plan), driving the product's real sensing/detection/routing + the planner core (`src/core/planner.ts`). Tier B (live agents) validates externally — see `live.ts` + the sections below._
 
 ---
 
