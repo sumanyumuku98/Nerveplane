@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDb } from "../src/storage/db.ts";
 import { runMigrations } from "../src/storage/migrate.ts";
+import { eq } from "drizzle-orm";
 import { senseAgent, resetSensing } from "../src/repo/sensing.ts";
 import { recentEvents } from "../src/core/events.ts";
 import { getWorktreeState, getRepoInfo } from "../src/repo/git.ts";
+import { agentWorktreeState } from "../src/storage/schema.ts";
 
 getDb(join(mkdtempSync(join(tmpdir(), "np-sense-")), "test.db"));
 runMigrations();
@@ -60,4 +62,32 @@ test("sensing emits a files_changed event only after a change appears", async ()
   // No further change → no new event.
   const third = await senseAgent("agent_sense", dir, "repo_sense", "main", "tester");
   expect(third).toBe(0);
+});
+
+test("worktree updatedAt advances only on real changes, not every poll", async () => {
+  const dir = makeRepo();
+  resetSensing();
+  const readUpdatedAt = () =>
+    getDb().select().from(agentWorktreeState).where(eq(agentWorktreeState.agentId, "agent_upd")).get()?.updatedAt;
+
+  await senseAgent("agent_upd", dir, "repo_upd", "main", "tester"); // baseline
+  const t0 = readUpdatedAt();
+  expect(t0).toBeTruthy();
+
+  // Poll again with no change → updatedAt must stay put (the fix).
+  await Bun.sleep(5);
+  await senseAgent("agent_upd", dir, "repo_upd", "main", "tester");
+  expect(readUpdatedAt()).toBe(t0);
+
+  // A real edit → updatedAt advances.
+  writeFileSync(join(dir, "f.ts"), "export const f = 1;\n");
+  await Bun.sleep(5);
+  await senseAgent("agent_upd", dir, "repo_upd", "main", "tester");
+  const t1 = readUpdatedAt();
+  expect(t1! > t0!).toBe(true);
+
+  // Poll again, still no new change → unchanged.
+  await Bun.sleep(5);
+  await senseAgent("agent_upd", dir, "repo_upd", "main", "tester");
+  expect(readUpdatedAt()).toBe(t1);
 });
