@@ -174,3 +174,46 @@ and score only the actual `import` line. The table above is post-fix. Not a CI g
 (costs money, nondeterministic).
 
 Reproduce: `NP_EVAL_AGENT=claude NP_EVAL_MODE=continuity NP_EVAL_SEEDS=5 [NP_EVAL_MODEL=haiku] bun run experiments/coordination-evals/live.ts`
+
+---
+
+## Tier-B — live MULTI-AGENT 3-arm (SUM-148): pilot
+
+**Design (`live-multi.ts`).** Real coding agents concurrently edit a throwaway git
+repo under three arms: **C0** (task only) / **C1-detect** (task + a reactive, vague
+"a teammate may be editing X" warning) / **C1-plan** (task + an explicit up-front
+planner assignment from `buildPlan()`: "you own X; do NOT edit Y; put new work in a
+new file"). Each agent runs headless with `--dangerously-skip-permissions` in its own
+worktree (sandboxed); we then integrate the real branches and score CTSR / merge
+conflicts / wasted LOC, plus **scope-leakage** = did a reassigned C1-plan agent edit
+a file it was told not to.
+
+**Pilot: shared-file scenario, 2 agents (csv + pdf both extend `src/report.ts`),
+agent = Claude Code (frontier), K = 5.**
+
+| arm | CTSR | merge conflicts | wasted LOC | scope-leakage |
+| --- | --- | --- | --- | --- |
+| C0 | 1.00 | 0.0 | 0 | — |
+| C1-detect | 1.00 | 0.0 | 0 | — |
+| C1-plan | 1.00 | 0.0 | 0 | **0.00** |
+
+**Two findings.**
+1. **Agents RESPECT planner assignments — scope-leakage = 0/5 (the make-or-break
+   metric).** Every C1-plan run put the PDF work in a NEW file, explicitly "leaving
+   `src/report.ts` untouched as coordinated." So the planner's disjoint-scope
+   partition is not a tautology defeated by leakage — real frontier agents honor it.
+   This de-risks the core planner thesis.
+2. **The 2-agent same-file baseline is too easy to fail with real agents.** Unlike the
+   Tier-A scripted edits (which rewrite the same lines → guaranteed conflict), real
+   agents make *additive* edits (append a function) that git 3-way-merges cleanly, so
+   **C0 already achieves CTSR = 1** and the arms don't separate on outcome. Outcome-lift
+   from the planner is therefore unmeasurable on this scenario.
+
+**Implication for scaling (go).** The mechanism is validated (0 leakage); to show an
+outcome benefit the scaled run needs a baseline where C0 genuinely fails with live
+agents — e.g. (a) a task forcing true line-level overlap (both must change the same
+function signature), (b) the **contract/semantic** scenario (git-clean but the
+consumer breaks unless it adapts — accept-fail, not a merge conflict), and/or (c)
+higher-N contention. Then re-run 3 arms × {frontier, Haiku} × K≥5 with CIs.
+
+Reproduce: `NP_EVAL_AGENT=claude [NP_EVAL_MODEL=haiku] NP_EVAL_SEEDS=5 bun run experiments/coordination-evals/live-multi.ts`
