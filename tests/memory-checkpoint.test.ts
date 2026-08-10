@@ -91,6 +91,40 @@ test("acking suppresses re-nudge for persistent uncommitted file changes", async
   expect(memoryCheckpointStatus(agent, { ack: true }).shouldNudge).toBe(false);
 });
 
+test("regression: a persistently dirty worktree is nudged at most once per memory cycle", async () => {
+  const agent = await freshAgent();
+  const setUpdatedAt = (updatedAt: string) =>
+    getDb()
+      .insert(agentWorktreeState)
+      .values({ agentId: agent, repoId: "r", changedFiles: ["a.ts", "b.ts", "c.ts"], updatedAt })
+      .onConflictDoUpdate({ target: agentWorktreeState.agentId, set: { updatedAt } })
+      .run();
+
+  // Dirty worktree, no memory → first nudge.
+  setUpdatedAt("2026-01-01T00:00:00.000Z");
+  expect(memoryCheckpointStatus(agent, { ack: true }).shouldNudge).toBe(true);
+
+  // The sensing engine used to bump updatedAt every poll; simulate that. It must
+  // NOT re-nudge — this was the bug ("23 changed file(s)" every single turn).
+  setUpdatedAt("2026-01-01T00:05:00.000Z");
+  expect(memoryCheckpointStatus(agent, { ack: true }).shouldNudge).toBe(false);
+  setUpdatedAt("2026-01-01T00:10:00.000Z");
+  expect(memoryCheckpointStatus(agent, { ack: true }).shouldNudge).toBe(false);
+
+  // Agent saves a memory → the cycle resets, but the same (older) file set must
+  // not immediately re-nudge.
+  await Bun.sleep(5);
+  await remember({ authorAgentId: agent, kind: "episode", body: "saved progress" });
+  await Bun.sleep(5);
+  expect(memoryCheckpointStatus(agent, { ack: true }).shouldNudge).toBe(false);
+
+  // Genuinely NEW changes after the memory → exactly one more nudge, then quiet.
+  setUpdatedAt("2999-01-01T00:00:00.000Z");
+  expect(memoryCheckpointStatus(agent, { ack: true }).shouldNudge).toBe(true);
+  setUpdatedAt("2999-01-01T00:05:00.000Z");
+  expect(memoryCheckpointStatus(agent, { ack: true }).shouldNudge).toBe(false);
+});
+
 test("quiet agent with no memory-worthy work ⇒ no nudge", async () => {
   const agent = await freshAgent();
   expect(memoryCheckpointStatus(agent, { ack: true }).shouldNudge).toBe(false);

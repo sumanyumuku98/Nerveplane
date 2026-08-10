@@ -19,6 +19,12 @@ import { MEMORY_CHECKPOINT_MIN_FILES } from "../config.ts";
  * The nudge is self-limiting: writing a memory advances `lastMemoryAt` and clears
  * the signal at the source. A second `lastMemoryNudgeAt` cursor prevents nagging
  * when the agent deliberately ignores a nudge — only new work re-triggers.
+ *
+ * File changes are a live snapshot (the sensing engine keeps `updatedAt` at the
+ * last time the changed-file SET actually changed), so they are capped to at most
+ * ONE nudge per memory cycle: once we've nudged since the last memory write, the
+ * file-change signal stays suppressed until a memory is saved. Discrete events
+ * (decisions/handoffs) still re-nudge because they're rare and cursor-deduped.
  */
 
 /** Event types (emitted in core/tasks.ts) that represent a task boundary worth remembering. */
@@ -50,8 +56,6 @@ export function memoryCheckpointStatus(agentId: string, opts: { ack?: boolean } 
   if (!agent) return NONE;
   const db = getDb();
 
-  // Cursor = the later of the agent's last memory write and its last nudge, so
-  // work already captured (or already nudged) never re-triggers.
   const lastMem = db
     .select({ createdAt: memories.createdAt })
     .from(memories)
@@ -60,7 +64,11 @@ export function memoryCheckpointStatus(agentId: string, opts: { ack?: boolean } 
     .limit(1)
     .get();
   const marker = db.select().from(syncMarkers).where(eq(syncMarkers.agentId, agentId)).get();
-  const cursor = [lastMem?.createdAt, marker?.lastMemoryNudgeAt].filter(Boolean).sort().at(-1) ?? "";
+  const lastMemoryAt = lastMem?.createdAt ?? "";
+  const lastNudgeAt = marker?.lastMemoryNudgeAt ?? "";
+  // Event cursor = the later of the last memory write and the last nudge, so a
+  // discrete event already captured (or already nudged for) never re-triggers.
+  const eventsCursor = [lastMemoryAt, lastNudgeAt].filter(Boolean).sort().at(-1) ?? "";
 
   // Memory-worthy events this agent produced after the cursor.
   const worthyEvents = db
@@ -69,7 +77,7 @@ export function memoryCheckpointStatus(agentId: string, opts: { ack?: boolean } 
     .where(
       and(
         eq(events.producerAgentId, agentId),
-        cursor ? gt(events.createdAt, cursor) : undefined,
+        eventsCursor ? gt(events.createdAt, eventsCursor) : undefined,
         inArray(events.type, WORTHY_EVENT_TYPES),
       ),
     )
@@ -77,14 +85,16 @@ export function memoryCheckpointStatus(agentId: string, opts: { ack?: boolean } 
   const decisions = worthyEvents.filter((e) => e.type === DECISION_EVENT_TYPE).length;
   const handoffs = worthyEvents.length - decisions;
 
-  // Substantial uncommitted work in the worktree. This is a live snapshot, so we
-  // only count it as a fresh signal when the set was (re)sensed after the cursor
-  // — otherwise persistent uncommitted files would re-nudge every turn even after
-  // a memory is written.
+  // Substantial uncommitted work. `updatedAt` is the last time the changed-file
+  // SET actually changed (see sensing.ts), so require changes NEWER than the last
+  // memory, and cap to one nudge per memory cycle: if we've already nudged since
+  // that memory, stay silent until a memory is saved. This is what stops the
+  // per-turn nagging for a persistently dirty worktree.
   const wt = db.select().from(agentWorktreeState).where(eq(agentWorktreeState.agentId, agentId)).get();
   const changedFiles = wt?.changedFiles?.length ?? 0;
-  const changedSinceCursor = !cursor || (wt?.updatedAt ?? "") > cursor;
-  const substantialChanges = changedFiles >= MEMORY_CHECKPOINT_MIN_FILES && changedSinceCursor;
+  const changedSinceMemory = (wt?.updatedAt ?? "") > lastMemoryAt;
+  const nudgedSinceMemory = lastNudgeAt !== "" && lastNudgeAt >= lastMemoryAt;
+  const substantialChanges = changedFiles >= MEMORY_CHECKPOINT_MIN_FILES && changedSinceMemory && !nudgedSinceMemory;
 
   const shouldNudge = decisions + handoffs > 0 || substantialChanges;
   if (!shouldNudge) return { ...NONE, changedFiles };

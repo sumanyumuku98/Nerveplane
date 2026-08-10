@@ -19,18 +19,36 @@ import { detectContractChanges, resetContractDetection } from "../services/detec
 interface Snapshot {
   changed: Set<string>;
   branch: string | null;
+  headSha: string | null;
+  /** Wall-clock time the changed-file SET (or branch/head) last actually changed. */
+  changedAt: string;
 }
 
 const snapshots = new Map<string, Snapshot>();
+
+/** True when the two sets differ in membership (catches both additions and removals). */
+function setsDiffer(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return true;
+  for (const x of a) if (!b.has(x)) return true;
+  return false;
+}
 
 /** Senses one agent's worktree once. Returns the number of events emitted (0 or 1). */
 export async function senseAgent(agentId: string, worktreePath: string, repoId: string, baseBranch: string | null, agentName: string): Promise<number> {
   const state = await getWorktreeState(worktreePath, baseBranch);
   const current = new Set(state.changedFiles);
   const prev = snapshots.get(agentId);
+  const now = nowIso();
+
+  // `updatedAt` must mean "last time the changed-file set actually changed", not
+  // "last time we polled" — the memory-checkpoint nudge (core/checkpoint.ts) gates
+  // on it, and bumping it every tick made a dirty worktree re-nudge every turn.
+  const realChange = !prev || setsDiffer(current, prev.changed) || state.branch !== prev.branch || state.headSha !== prev.headSha;
+  const changedAt = realChange ? now : prev!.changedAt;
 
   // Persist the latest sensed state every tick so the cross-agent conflict
-  // detector always has each agent's current changed-file set (plan M2.1).
+  // detector always has each agent's current changed-file set (plan M2.1), but
+  // only advance `updatedAt` when something genuinely changed.
   getDb()
     .insert(agentWorktreeState)
     .values({
@@ -39,11 +57,11 @@ export async function senseAgent(agentId: string, worktreePath: string, repoId: 
       changedFiles: [...current].sort(),
       branch: state.branch,
       headSha: state.headSha,
-      updatedAt: nowIso(),
+      updatedAt: changedAt,
     })
     .onConflictDoUpdate({
       target: agentWorktreeState.agentId,
-      set: { repoId, changedFiles: [...current].sort(), branch: state.branch, headSha: state.headSha, updatedAt: nowIso() },
+      set: { repoId, changedFiles: [...current].sort(), branch: state.branch, headSha: state.headSha, updatedAt: changedAt },
     })
     .run();
 
@@ -53,13 +71,13 @@ export async function senseAgent(agentId: string, worktreePath: string, repoId: 
 
   // First observation establishes a baseline — no files_changed event.
   if (!prev) {
-    snapshots.set(agentId, { changed: current, branch: state.branch });
+    snapshots.set(agentId, { changed: current, branch: state.branch, headSha: state.headSha, changedAt });
     return 0;
   }
 
   const added = [...current].filter((f) => !prev.changed.has(f));
   const branchChanged = state.branch !== prev.branch;
-  snapshots.set(agentId, { changed: current, branch: state.branch });
+  snapshots.set(agentId, { changed: current, branch: state.branch, headSha: state.headSha, changedAt });
 
   if (added.length === 0 && !branchChanged) return 0;
   if (added.length === 0) return 0; // branch-only changes are not actionable in M1
