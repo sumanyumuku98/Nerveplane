@@ -217,3 +217,42 @@ consumer breaks unless it adapts — accept-fail, not a merge conflict), and/or 
 higher-N contention. Then re-run 3 arms × {frontier, Haiku} × K≥5 with CIs.
 
 Reproduce: `NP_EVAL_AGENT=claude [NP_EVAL_MODEL=haiku] NP_EVAL_SEEDS=5 bun run experiments/coordination-evals/live-multi.ts`
+
+### Contract-semantic scenario — the OUTCOME probe (C0 genuinely fails)
+
+Producer renames the invoice money field (`amount` dollars → `amountCents` integer
+cents) in `api/contract.ts`; the consumer, working off the OLD contract in its own
+worktree, implements `renderTotal`. The two files git-merge cleanly, but the consumer
+is **semantically broken** (references the removed `amount`) unless it adapts. C0 gets
+nothing; C1-detect gets a *vague* "the contract may be changing" (no specifics);
+C1-plan gets the *specific* change + "merge after the producer." CTSR = producer
+migrated AND consumer uses the new field AND no stale `amount` reference.
+
+**Live 3-arm CTSR (K = 5, agent = Claude Code):**
+
+| model | C0 | C1-detect | C1-plan |
+| --- | --- | --- | --- |
+| frontier | 0.00 | 0.00 | **1.00** |
+| Haiku (`--model haiku`) | 0.00 | 0.00 | **0.60** |
+
+**Findings.**
+- **The planner produces real outcome-lift with live agents.** C1-plan lands the
+  breaking contract change where C0 and C1-detect fail on every seed (frontier), or
+  most seeds (Haiku). This is the pivotal Tier-B evidence.
+- **Vague reactive warning ≠ a plan.** C1-detect = C0 = 0.00 on both models: raw
+  replies show the consumer knew "something may change" yet still coded to the stale
+  `inv.amount` — a heads-up without the *specifics* + merge order buys nothing. Only
+  the explicit up-front assignment (C1-plan) carries the contract shape the agent
+  needs. This is precisely the detector→planner thesis.
+- **Two layers of capability-dependence.** The *coordination signal* is
+  capability-independent (both frontier and Haiku fail at 0.00 without it — the info
+  isn't in their worktree). *Acting on* the plan is partly capability-dependent: the
+  frontier model adapts perfectly (1.00); Haiku adapts most of the time (0.60), with
+  the misses tracing to weaker execution (an occasional stray edit / incomplete
+  migration), not to missing information.
+
+**Net Tier-B story.** Agents respect planner scopes (shared-file: 0 leakage) AND the
+plan rescues a breaking contract change that both no-coordination and reactive
+detection miss (contract: 0.00/0.00 → 1.00 frontier, 0.60 Haiku). Reactive detection
+is not a substitute for proactive planning. Not a CI gate (costs money,
+nondeterministic); raw replies logged to `$NP_EVAL_LOG`.
