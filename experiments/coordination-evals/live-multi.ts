@@ -62,7 +62,13 @@ interface LiveScenario {
   contractNote?: string;
   /** merged tree passes iff the scenario's success condition holds. */
   accept: (repo: string) => boolean;
+  /** consumer output files whose post-merge content is checked for adaptation to
+   *  the contract change (fan-out: per-consumer adaptation rate is the N metric). */
+  consumerFiles?: string[];
 }
+
+/** A consumer "adapted" iff its merged code uses the NEW field and drops the old. */
+const adaptedNew = (s: string) => /amountCents/.test(s) && !/\bamount\b(?!Cents)/.test(s);
 
 // (1) SAME-FILE contention — measures SCOPE-LEAKAGE (does a reassigned agent
 // respect "don't touch the owned file"?). Real agents make additive edits, so
@@ -120,6 +126,39 @@ const contract: LiveScenario = {
   },
 };
 
+// (3) CONTRACT FAN-OUT — one producer migrates the contract; N consumers each
+// render the total in their OWN file. All files git-merge cleanly, so the metric
+// is the PER-CONSUMER ADAPTATION RATE: how many consumers used the new field.
+// C0/C1-detect: consumers off the old contract stay stale as N grows; C1-plan:
+// each consumer gets the specific change → adapts. This is the LIVE effect-by-N.
+function fanout(n: number): LiveScenario {
+  const consumers = Array.from({ length: n }, (_, i) => `svc${i}`);
+  const base: Record<string, string> = { "api/contract.ts": CONTRACT_OLD };
+  for (const c of consumers) base[`web/${c}.ts`] = `import type { Invoice } from '../api/contract';\nexport function render_${c}(inv: Invoice): string {\n  return '$0.00'; // TODO: render the invoice total\n}\n`;
+  const agents: LiveAgent[] = [
+    { name: "payments", scope: ["api/contract.ts"], task: "In api/contract.ts, MIGRATE the invoice money field: replace `amount` (a float in US dollars) with `amountCents` (an integer number of cents). Update the `Invoice` interface and the `example` value. This is a breaking contract change." },
+    ...consumers.map((c) => ({
+      name: c,
+      scope: [`web/${c}.ts`],
+      consumes: ["api/contract.ts"],
+      task: `In web/${c}.ts, implement render_${c}(inv) to return the invoice total as a US dollar string like \`$12.50\`. Use the invoice contract in api/contract.ts.`,
+    })),
+  ];
+  return {
+    name: `fanout-n${n}`,
+    base,
+    agents,
+    contractNote: "payments is renaming the invoice money field `amount` (float dollars) to `amountCents` (integer cents) in api/contract.ts. Consume `amountCents` and divide by 100 to render dollars.",
+    consumerFiles: consumers.map((c) => `web/${c}.ts`),
+    accept: (repo) => {
+      const api = existsSync(join(repo, "api/contract.ts")) ? readFileSync(join(repo, "api/contract.ts"), "utf8") : "";
+      const producerMigrated = /amountCents/.test(api) && !/\bamount\b(?!Cents)/.test(api);
+      const allAdapted = consumers.every((c) => adaptedNew(existsSync(join(repo, `web/${c}.ts`)) ? readFileSync(join(repo, `web/${c}.ts`), "utf8") : ""));
+      return producerMigrated && allAdapted;
+    },
+  };
+}
+
 const SCENARIOS: LiveScenario[] = [sharedFile, contract];
 
 interface Assignment {
@@ -175,6 +214,7 @@ interface Outcome {
   wastedLoc: number;
   scopeLeaks: number; // # of C1-plan agents that edited a forbidden file (NaN for other arms)
   leakDenom: number; // # of agents with a forbidden set (for a rate)
+  consumerAdaptRate: number; // fraction of consumer files that adapted (NaN if none)
 }
 
 async function runArm(scn: LiveScenario, arm: Arm, agentId: string): Promise<Outcome> {
@@ -252,7 +292,14 @@ async function runArm(scn: LiveScenario, arm: Arm, agentId: string): Promise<Out
     }
   }
   const ctsr = mergeConflicts === 0 && scn.accept(intg);
-  return { ctsr, mergeConflicts, wastedLoc, scopeLeaks: arm === "C1-plan" ? scopeLeaks : NaN, leakDenom };
+  // Per-consumer adaptation rate (fan-out): fraction of consumer files whose merged
+  // content uses the new contract field.
+  let consumerAdaptRate = NaN;
+  if (scn.consumerFiles && scn.consumerFiles.length) {
+    const adapted = scn.consumerFiles.filter((f) => adaptedNew(existsSync(join(intg, f)) ? readFileSync(join(intg, f), "utf8") : "")).length;
+    consumerAdaptRate = adapted / scn.consumerFiles.length;
+  }
+  return { ctsr, mergeConflicts, wastedLoc, scopeLeaks: arm === "C1-plan" ? scopeLeaks : NaN, leakDenom, consumerAdaptRate };
 }
 
 function mean(xs: number[]): number {
@@ -284,9 +331,13 @@ async function main() {
     return;
   }
   const K = Number(process.env.NP_EVAL_SEEDS ?? 5);
-  // NP_EVAL_SCENARIO=shared-file|contract restricts the run (to control cost).
+  // NP_EVAL_SCENARIO=shared-file|contract|fanout restricts the run (to control cost).
+  // For fanout, NP_SWEEP_NS=2,4,8 sweeps N consumers (the live effect-by-N).
   const filter = process.env.NP_EVAL_SCENARIO;
-  const scenarios = SCENARIOS.filter((s) => !filter || s.name.includes(filter));
+  const scenarios =
+    filter === "fanout"
+      ? (process.env.NP_SWEEP_NS ?? "2,4,8").split(",").map((s) => fanout(Number(s.trim())))
+      : SCENARIOS.filter((s) => !filter || s.name.includes(filter));
 
   for (const scn of scenarios) {
     const rows: Record<Arm, Outcome[]> = { C0: [], "C1-detect": [], "C1-plan": [] };
@@ -304,6 +355,7 @@ async function main() {
         merge_conflicts_ci95: Number(ci95(os.map((o) => o.mergeConflicts)).toFixed(3)),
         wasted_loc_mean: mean(os.map((o) => o.wastedLoc)),
         scope_leakage_rate: arm === "C1-plan" && denom ? leakCount / denom : null,
+        consumer_adapt_rate: Number.isNaN(os[0]!.consumerAdaptRate) ? null : Number(mean(os.map((o) => o.consumerAdaptRate)).toFixed(3)),
       };
     });
     process.stdout.write(
