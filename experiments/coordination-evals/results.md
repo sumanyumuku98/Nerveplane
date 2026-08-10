@@ -113,3 +113,64 @@ Trap-fall rate = 0 across the board; parse-fail = 0; oracle = 1.0 (task is genui
 **Finding: H8 NOT supported — a robust, well-tested negative.** Even a *cheap* model does correct 3-hop disambiguation-by-rule over 100k tokens of dilution with three traps. We removed every crutch and modern models still don't lose *accuracy* to dilution at window-fitting scales. This strengthens (does not weaken) the honest thesis: **the value of per-repo scoping + routing is cost + capacity/feasibility, not accuracy rescue.** Presenting the cost/capacity numbers + the proven Tier-A coordination outcomes is the credible pitch — precisely because we tried hard to find an accuracy win and reported that we couldn't.
 
 *(Where an accuracy gap would plausibly appear: contexts beyond the reliable window (≫200k, where overflow/capacity already bites), tasks needing aggregation over *many* buried instances rather than a fixed-arity join, or much weaker/older models. Out of scope here; flagged as honest future work, not reverse-engineered into a win.)*
+
+## Tier-B — memory continuity (SUM-152)
+
+**Hypothesis (capability-independent / immune to model strength).** No model,
+however strong, can recall a *project-specific* fact it was never told. If a prior
+agent discovers a repo-local gotcha and records it, a later, differently-sessioned
+agent should stop repeating that mistake — but only if cross-session memory carries
+the discovery forward. Model strength cannot substitute for a missing fact.
+
+**Design (`NP_EVAL_MODE=continuity` in `live.ts`).** Drives the REAL memory primitives
+(`remember`/`recall`) against an ISOLATED throwaway SQLite (`initBenchDb()`, never the
+user's store), and runs session 2 as a REAL agent INSIDE a ground-truth sandbox repo.
+
+- **Ground-truth sandbox.** A temp repo with **two symmetric auth backends** —
+  `src/auth/edgeAuth.ts` and `src/auth/sessionAuth.ts`, both exporting an identical
+  `getAuth()`, with neutral doc comments and a neutral README. Both are real and
+  importable, so a tool-using agent can *verify* a recalled note; but **which backend
+  is sanctioned appears nowhere in the code** — it is a team decision that lives only
+  in memory.
+- **Lesson (non-derivable decision).** *"For new endpoints, auth must use `getAuth`
+  from `src/auth/edgeAuth`; we migrated off `src/auth/sessionAuth` because server
+  sessions broke edge deploys."* Recorded by session 1 via `remember({kind:"episode"})`.
+- **Session 2 (fresh session / different CLI), K seeds each.** Task: *"this repo has
+  more than one auth backend — inspect the code, then reply with ONLY the single import
+  line you'd use."* **C0** = task only; **C1** = `recall()` top hit routed in
+  (`📓 Recalled from a previous session: …`). The agent runs with `cwd` = the sandbox.
+- **Metric.** Repeated-mistake rate = `1 − adherence`, adherence = the **actual import
+  line** targets `edgeAuth` and not `sessionAuth` (parsed from `import … from '…'`,
+  NOT prose mentions).
+
+**Capability-independence.** C0 and C1 differ ONLY in whether the recalled decision is
+present. The correct choice is not recoverable from the repo, so no amount of model
+strength closes the gap — it's an *information* gap, not a *reasoning* gap.
+
+**Results — keyed runs (agent = Claude Code, K = 5 seeds).**
+
+| model | C0 (no memory) | C1 (recalled) |
+| --- | --- | --- |
+| frontier (Opus/Sonnet default) | **1.00** | **0.00** |
+| Haiku (`--model haiku`) | **1.00** | **0.00** |
+
+Repeated-mistake rate collapses **1.00 → 0.00** on both a frontier and a weak model —
+the effect is model-independent, as predicted. Raw replies (logged to `$NP_EVAL_LOG`)
+confirm it is genuine, not a scorer artifact: in **C0** the agents explicitly note the
+two backends are "a genuine tie — nothing in the code disambiguates" and either flag
+the blocker or default to `sessionAuth` (a login → session heuristic); in **C1** they
+verify both modules exist and cite "the choice is a policy one, governed by the prior
+decision" before importing `edgeAuth`.
+
+**Methods note — two validity bugs found and fixed (honest trail).** The first design
+planted a *fictional* module (`src/lib/authClient`); the tool-using agent fact-checked
+it against the real repo, found it absent, and correctly refused — so C0/C1 were both
+meaningless (an early keyed run misread this as C0 = 1.0 / C1 = 0.67). Fix 1: run inside
+a sandbox where the modules genuinely exist. A second run then exposed that (a) the
+sandbox's `// Centralized` / `// Legacy` comments let C0 *derive* the answer without
+memory, and (b) the scorer penalized any reply that merely *mentioned* the legacy
+module by name. Fix 2: make the two backends symmetric/neutral (choice non-derivable)
+and score only the actual `import` line. The table above is post-fix. Not a CI gate
+(costs money, nondeterministic).
+
+Reproduce: `NP_EVAL_AGENT=claude NP_EVAL_MODE=continuity NP_EVAL_SEEDS=5 [NP_EVAL_MODEL=haiku] bun run experiments/coordination-evals/live.ts`
