@@ -4,6 +4,7 @@ import { startPresenceSweeper } from "../core/presence.ts";
 import { startSensing } from "../repo/sensing.ts";
 import { ensureHome, writeLock, clearLock, readLiveLock } from "./lock.ts";
 import { ensureSidecar, stopSidecar } from "../memory/sidecar.ts";
+import { startWorkerPool } from "./worker-pool.ts";
 import { HOST, DEFAULT_PORT, MEMORY_MODE } from "../config.ts";
 import pkg from "../../package.json" with { type: "json" };
 
@@ -42,6 +43,14 @@ export async function startDaemon(port: number = DEFAULT_PORT): Promise<DaemonHa
 
   const stopSweeper = startPresenceSweeper();
   const stopSensing = startSensing();
+  // Supervise a headless worker per enrolled repo (auto-enroll happens in
+  // registerAgent); never block boot if this throws.
+  let stopWorkers = () => {};
+  try {
+    stopWorkers = startWorkerPool();
+  } catch (err) {
+    console.error("nerveplane: worker pool failed to start:", err);
+  }
 
   // Warm the mem0 sidecar when semantic/hybrid memory is configured (lazy anyway,
   // but this surfaces config issues at boot). Fire-and-forget; failures fall back
@@ -54,6 +63,7 @@ export async function startDaemon(port: number = DEFAULT_PORT): Promise<DaemonHa
     stopped = true;
     stopSweeper();
     stopSensing();
+    stopWorkers();
     stopSidecar();
     await server.stop();
     clearLock();

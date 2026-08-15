@@ -11,6 +11,7 @@ import { recordDecision, queryDecisions, recentDecisions, setDecisionStatus } fr
 import { remember, recall, listMemories, forget } from "../core/memory.ts";
 import type { MemoryKind } from "../core/memory.ts";
 import { memoryCheckpointStatus } from "../core/checkpoint.ts";
+import { workerPoolStatus, reconcileWorkers } from "../daemon/worker-pool.ts";
 import { listConflicts, resolveConflict, dismissConflict } from "../core/conflicts.ts";
 import { scanServiceGraph, listServices, listContracts, invalidateGraphCache } from "../services/contracts.ts";
 import { buildJoinPacket } from "../core/join.ts";
@@ -40,6 +41,13 @@ export function buildApi(): Hono {
     return null;
   };
 
+  // --- worker pool (daemon-supervised headless workers) ---
+  api.get("/workers", (c) => c.json(workerPoolStatus()));
+  api.post("/workers/reconcile", (c) => {
+    reconcileWorkers();
+    return c.json(workerPoolStatus());
+  });
+
   // --- registration & presence ---
   api.post("/register", async (c) => {
     const b = await c.req.json();
@@ -56,6 +64,7 @@ export function buildApi(): Hono {
       task: b.task,
       metadata: b.metadata,
       connectionPid: b.connection_pid ?? b.connectionPid,
+      role: b.role,
     });
     // Optional convenience: claim an initial task if one was described.
     if (b.task) {

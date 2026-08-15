@@ -4,8 +4,11 @@ import { agents, capabilities, type AgentStatus } from "../storage/schema.ts";
 import { upsertRepoByPath } from "./repos.ts";
 import { isAgentLive } from "./presence.ts";
 import { newId, nowIso } from "./util.ts";
+import { readWorkersConfig, enrollWorker } from "../config-store.ts";
 
 export type Agent = typeof agents.$inferSelect;
+
+export type AgentRole = "worker" | "interactive";
 
 export interface RegisterInput {
   name: string;
@@ -20,6 +23,18 @@ export interface RegisterInput {
   task?: string;
   metadata?: Record<string, unknown>;
   connectionPid?: number; // PID of the stdio bridge process (primary liveness signal)
+  role?: AgentRole; // "worker" = a pool/manual worker's OWN registration (skips auto-enroll)
+}
+
+/**
+ * Reconcile hook injected by the daemon at boot (`setAutoEnrollHook`) so core can
+ * poke the worker pool WITHOUT importing it (no core→daemon cycle). The enroll
+ * itself happens here in core (testable, config-only); the hook just tells the
+ * daemon to (re)spawn workers. Default no-op keeps core self-contained.
+ */
+let autoEnrollHook: ((worktreePath: string) => void) | null = null;
+export function setAutoEnrollHook(fn: ((worktreePath: string) => void) | null): void {
+  autoEnrollHook = fn;
 }
 
 export interface AgentWithCaps extends Agent {
@@ -93,6 +108,22 @@ export async function registerAgent(input: RegisterInput): Promise<AgentWithCaps
     db.delete(capabilities).where(eq(capabilities.agentId, id)).run();
     for (const cap of new Set(input.capabilities)) {
       db.insert(capabilities).values({ agentId: id, capability: cap }).run();
+    }
+  }
+
+  // Auto-enroll this repo for a supervised worker (agent-agnostic: fires for any
+  // provider that registers). Gated on the pool hook being wired — so it only runs
+  // inside a live daemon, never in the CLI/tests (no config writes there). A worker's
+  // OWN registration (role='worker') is skipped so it never re-enrolls, refreshes the
+  // TTL clock, or churns reconcile.
+  if (autoEnrollHook && input.role !== "worker" && repo && worktreePath) {
+    try {
+      if (readWorkersConfig().autoEnroll) {
+        enrollWorker(worktreePath); // idempotent; refreshes lastSeenAt (TTL)
+        autoEnrollHook(worktreePath); // daemon → reconcile
+      }
+    } catch {
+      /* coordination must never break registration */
     }
   }
 

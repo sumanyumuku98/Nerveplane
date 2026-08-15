@@ -24,6 +24,7 @@ export const coreCtx: ToolCtx = {
       branch: s(a.branch),
       baseBranch: s(a.base_branch),
       task: s(a.task),
+      role: s(a.role) as "worker" | "interactive" | undefined,
     });
     if (a.task) {
       try {

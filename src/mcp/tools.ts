@@ -43,6 +43,7 @@ export function registerTools(server: McpServer, ctx: ToolCtx): void {
       branch: z.string().optional(),
       base_branch: z.string().optional().describe("branch you will merge into, e.g. 'main'"),
       task: z.string().optional().describe("one-line description of what you're working on"),
+      role: z.enum(["worker", "interactive"]).optional().describe("internal: 'worker' for a daemon-spawned/headless worker (skips auto-enroll); omit for interactive sessions"),
     },
     (args) => wrap(() => ctx.register(args)),
   );

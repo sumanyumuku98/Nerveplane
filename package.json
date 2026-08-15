@@ -1,6 +1,6 @@
 {
   "name": "nerveplane",
-  "version": "0.16.2",
+  "version": "0.17.0",
   "description": "Local-first, MCP-compatible coordination plane for autonomous coding agents",
   "homepage": "https://sumanyumuku98.github.io/Nerveplane/",
   "repository": {

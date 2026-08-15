@@ -6,14 +6,19 @@ import { fileURLToPath } from "node:url";
 const ENTRY = fileURLToPath(new URL("../index.ts", import.meta.url));
 const LABEL = "dev.nerveplane.daemon";
 
+/** Resolve how to launch a `nerveplane <sub...>` command (installed binary preferred,
+ *  else `bun run <entry> <sub...>` in dev, else the compiled binary). Shared by the
+ *  service installer and the worker pool (which spawns `nerveplane worker ...`). */
+export function nervePlaneCommand(sub: string[]): { program: string; args: string[] } {
+  const onPath = Bun.which("nerveplane");
+  if (onPath) return { program: onPath, args: sub };
+  const isBun = /bun(\.exe)?$/.test(basename(process.execPath));
+  return isBun ? { program: process.execPath, args: ["run", ENTRY, ...sub] } : { program: process.execPath, args: sub };
+}
+
 /** Resolve how to launch the daemon for a service unit (installed binary preferred). */
 function daemonCommand(): { program: string; args: string[] } {
-  const onPath = Bun.which("nerveplane");
-  if (onPath) return { program: onPath, args: ["daemon"] };
-  const isBun = /bun(\.exe)?$/.test(basename(process.execPath));
-  return isBun
-    ? { program: process.execPath, args: ["run", ENTRY, "daemon"] }
-    : { program: process.execPath, args: ["daemon"] };
+  return nervePlaneCommand(["daemon"]);
 }
 
 /**
