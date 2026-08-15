@@ -9,7 +9,8 @@ import { runWorker } from "./worker.ts";
 import { runDoctor } from "./doctor.ts";
 import { runWatch } from "./watch.ts";
 import { isInteractive, resolveAgent, pickAgent, pickConflict, pickAction, pickMemoryMode, pickEmbedder } from "./prompt.ts";
-import { readConfig, writeConfig, resolveMemoryMode, resolveEmbedder, CONFIG_JSON_PATH } from "../config-store.ts";
+import { readConfig, writeConfig, resolveMemoryMode, resolveEmbedder, CONFIG_JSON_PATH, enrollWorker, unenrollWorker, setAutoEnroll } from "../config-store.ts";
+import type { WorkerPoolStatusItem } from "../daemon/worker-pool.ts";
 import { getProvider, listProviders } from "../agents/index.ts";
 import { ensureOwnerToken, ownerToken } from "../security/owner.ts";
 import { runEvalCli } from "../eval/run.ts";
@@ -58,6 +59,12 @@ Project:
                          Prompts for the CLI agent on a TTY; override with --agent.
                          (flags: --agent <claude|codex|opencode>, --name, --model,
                          --permission-mode, --allowed-tools, --poll-ms, --once, --print)
+                         Repos are auto-enrolled when any agent opens in them; the daemon
+                         then keeps a supervised worker alive per enrolled repo.
+                           worker enable [--agent <a>] [--model <m>] [--all]  enroll manually
+                           worker disable                                     opt this repo out
+                           worker auto <on|off>                               toggle auto-enroll
+  workers                List enrolled repos + live worker status
   eval                   Run the deterministic conflict-detection eval
 
 Integration (usually invoked by tools, not humans):
@@ -437,11 +444,56 @@ export async function runCli(argv: string[]): Promise<number> {
       return 0;
     }
 
+    case "workers": {
+      // List enrolled repos + live worker status.
+      await ensureDaemon();
+      const res = await api<{ autoEnroll: boolean; maxConcurrent: number; workers: WorkerPoolStatusItem[] }>("GET", "/api/v1/workers");
+      const d = res.data;
+      if (!d) return process.stderr.write("nerveplane workers: could not reach the daemon\n"), 1;
+      process.stdout.write(`nerveplane workers: auto-enroll ${d.autoEnroll ? "on" : "off"}, cap ${d.maxConcurrent}\n`);
+      if (!d.workers.length) process.stdout.write("  (none enrolled yet — open an agent in a repo, or run `nerveplane worker enable`)\n");
+      for (const w of d.workers) {
+        process.stdout.write(`  [${w.status}] ${w.agent}  ${w.repoPath}${w.pid ? ` (pid ${w.pid})` : ""}${w.restarts ? ` restarts=${w.restarts}` : ""}\n`);
+      }
+      return 0;
+    }
+
     case "worker": {
       const flag = (name: string): string | undefined => {
         const i = rest.indexOf(name);
         return i >= 0 ? rest[i + 1] : undefined;
       };
+
+      // Pool administration subcommands (enrollment is otherwise automatic).
+      const sub = rest[0];
+      if (sub === "enable" || sub === "disable" || sub === "auto") {
+        await ensureDaemon();
+        if (sub === "auto") {
+          const on = rest[1] !== "off";
+          setAutoEnroll(on);
+          process.stdout.write(`nerveplane worker: auto-enroll ${on ? "on" : "off"}\n`);
+        } else if (sub === "disable") {
+          unenrollWorker(process.cwd());
+          process.stdout.write(`nerveplane worker: disabled for ${process.cwd()}\n`);
+        } else {
+          // enable [--agent] [--model] [--all]
+          const agentId = flag("--agent");
+          const model = flag("--model");
+          if (rest.includes("--all")) {
+            const repos = await api<{ repos: { path?: string }[] }>("GET", "/api/v1/repos");
+            let n = 0;
+            for (const r of repos.data?.repos ?? []) if (r.path) (enrollWorker(r.path, { agent: agentId, model }), n++);
+            process.stdout.write(`nerveplane worker: enrolled ${n} repo(s)\n`);
+          } else {
+            enrollWorker(process.cwd(), { agent: agentId, model });
+            process.stdout.write(`nerveplane worker: enabled for ${process.cwd()}${agentId ? ` (${agentId})` : ""}\n`);
+          }
+        }
+        // Apply immediately without waiting for the next daemon sweep.
+        await api("POST", "/api/v1/workers/reconcile", {});
+        return 0;
+      }
+
       const explicit = flag("--agent");
       const print = rest.includes("--print");
       // Prompt for the agent only on a TTY when neither --agent nor --print is given;

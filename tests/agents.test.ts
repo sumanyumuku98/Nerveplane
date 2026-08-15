@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getProvider, listProviders, DEFAULT_AGENT } from "../src/agents/index.ts";
-import { claudeHeadlessArgs } from "../src/agents/claude.ts";
+import { claudeHeadlessArgs, httpMcpConfig } from "../src/agents/claude.ts";
 
 // --- registry ---
 test("registry resolves providers, defaults to claude, rejects unknown", () => {
@@ -32,6 +32,18 @@ test("claude headlessArgs is byte-identical to the shipped invocation (regressio
   // with a session id + overrides
   const resumed = claudeHeadlessArgs("P", { sessionId: "s1", permissionMode: "acceptEdits", allowedTools: "Read", model: "m", mcpConfig: "{}" });
   expect(resumed).toEqual(["-p", "P", "--output-format", "json", "--permission-mode", "acceptEdits", "--allowedTools", "Read", "--model", "m", "--mcp-config", "{}", "--resume", "s1"]);
+});
+
+test("httpMcpConfig points claude at the daemon's warm HTTP endpoint (exact shape claude requires)", () => {
+  // Claude rejects a url without an explicit `type`, so both keys must be present.
+  expect(JSON.parse(httpMcpConfig("http://127.0.0.1:7734"))).toEqual({
+    mcpServers: { nerveplane: { type: "http", url: "http://127.0.0.1:7734/mcp" } },
+  });
+  // trailing slash on the base is normalized (no double slash before /mcp)
+  expect(JSON.parse(httpMcpConfig("http://127.0.0.1:7734/")).mcpServers.nerveplane.url).toBe("http://127.0.0.1:7734/mcp");
+  // flows through claudeHeadlessArgs when passed as opts.mcpConfig
+  const args = claudeHeadlessArgs("P", { mcpConfig: httpMcpConfig("http://127.0.0.1:7734") });
+  expect(args[args.indexOf("--mcp-config") + 1]).toContain('"type":"http"');
 });
 
 // --- per-adapter headless argv ---

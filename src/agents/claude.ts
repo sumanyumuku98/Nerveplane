@@ -4,8 +4,17 @@ import { installClaudeCode } from "../install/claude-code.ts";
 import { readJsonIfExists } from "./shared.ts";
 import type { AgentProvider, HeadlessOptions } from "./types.ts";
 
-/** Inline MCP config passed to `claude --mcp-config` (Claude supports inline). */
+/** Inline MCP config passed to `claude --mcp-config` (Claude supports inline).
+ *  Stdio fallback used when no daemon URL is available (spawns `nerveplane mcp`). */
 const DEFAULT_MCP = JSON.stringify({ mcpServers: { nerveplane: { command: "nerveplane", args: ["mcp"] } } });
+
+/** Inline MCP config that points Claude at the daemon's already-running HTTP MCP
+ *  endpoint instead of spawning a fresh `nerveplane mcp` stdio bridge each turn —
+ *  the warm-MCP latency win. Claude requires an explicit `type`: an entry with a
+ *  `url` but no `type` is a hard config error. */
+export function httpMcpConfig(baseUrl: string): string {
+  return JSON.stringify({ mcpServers: { nerveplane: { type: "http", url: `${baseUrl.replace(/\/$/, "")}/mcp` } } });
+}
 
 /** Canonical Claude headless argv — must stay byte-identical to the shipped worker
  *  behavior (locked by a golden test). Non-interactive via `--permission-mode

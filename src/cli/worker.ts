@@ -1,11 +1,11 @@
 import { basename, join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, appendFileSync } from "node:fs";
-import { api, ensureDaemon } from "../daemon/client.ts";
+import { api, ensureDaemon, baseUrl } from "../daemon/client.ts";
 import { NERVEPLANE_HOME } from "../config.ts";
 import type { WorkResult } from "../core/worker.ts";
 import { getProvider, DEFAULT_AGENT } from "../agents/index.ts";
 import type { AgentProvider, HeadlessOptions, TurnResult } from "../agents/types.ts";
-import { claudeHeadlessArgs } from "../agents/claude.ts";
+import { claudeHeadlessArgs, httpMcpConfig } from "../agents/claude.ts";
 
 /**
  * `nerveplane worker` — run an agent as an always-on autonomous process. It blocks
@@ -69,6 +69,16 @@ export function buildWorkerPrompt(work: WorkResult, agentId: string, memories: R
 export type { TurnResult };
 export type TurnRunner = (prompt: string, ctx: { cwd: string; sessionId?: string; opts: WorkerOptions }) => Promise<TurnResult>;
 
+/** Prefer the daemon's warm HTTP MCP endpoint over a fresh per-turn `nerveplane mcp`
+ *  stdio bridge. Only for providers that take inline MCP config (Claude) and only when
+ *  the caller didn't pass one and the daemon URL is known; otherwise leave it (the
+ *  provider's stdio default applies). */
+function withHttpMcp(opts: WorkerOptions, provider: AgentProvider): WorkerOptions {
+  if (opts.mcpConfig || !provider.capabilities.inlineMcpConfig) return opts;
+  const base = baseUrl();
+  return base ? { ...opts, mcpConfig: httpMcpConfig(base) } : opts;
+}
+
 const headlessOptionsFor = (opts: WorkerOptions, sessionId: string | undefined, provider: AgentProvider): HeadlessOptions => ({
   sessionId: provider.capabilities.resume ? sessionId : undefined,
   model: opts.model,
@@ -102,7 +112,7 @@ export async function runWorker(opts: WorkerOptions = {}, runner?: TurnRunner): 
   const name = opts.name ?? (basename(cwd) || "worker");
 
   if (opts.print) {
-    const args = provider.headlessArgs("<prompt>", headlessOptionsFor(opts, undefined, provider));
+    const args = provider.headlessArgs("<prompt>", headlessOptionsFor(withHttpMcp(opts, provider), undefined, provider));
     process.stdout.write(
       `nerveplane worker (dry run)\n  agent: ${provider.label} (${provider.id})\n  cwd:   ${cwd}\n  name:  ${name}\n  each turn runs:  ${provider.bin} ${args
         .map((a) => (a === "<prompt>" || a.includes(" ") ? `"${a}"` : a))
@@ -119,11 +129,14 @@ export async function runWorker(opts: WorkerOptions = {}, runner?: TurnRunner): 
   }
 
   await ensureDaemon();
+  // Now that the daemon URL is known, point turns at its warm HTTP MCP endpoint.
+  opts = withHttpMcp(opts, provider);
   const reg = await api<{ agent_id: string; agent?: { repoId?: string } }>("POST", "/api/v1/register", {
     name,
     repo_path: cwd,
     worktree_path: cwd,
     connection_pid: process.pid,
+    role: "worker", // so the daemon's auto-enroll doesn't treat a worker's own registration as user intent
   });
   const agentId = reg.data?.agent_id;
   const repoId = reg.data?.agent?.repoId;
