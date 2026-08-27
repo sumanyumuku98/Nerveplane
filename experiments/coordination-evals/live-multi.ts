@@ -191,11 +191,15 @@ function promptFor(arm: Arm, agent: LiveAgent, scn: LiveScenario, assignment: As
 async function runAgent(agentId: string, prompt: string, cwd: string, label: string): Promise<string> {
   const provider = getProvider(agentId);
   const model = process.env.NP_EVAL_MODEL;
-  // Editing-enabled headless argv (sandboxed temp repo): skip permission prompts so
-  // the agent can actually write files. NOTE: intentionally bypasses the default
-  // `--allowedTools mcp__nerveplane` (which blocks file edits).
-  const args = ["-p", prompt, "--output-format", "json", "--dangerously-skip-permissions"];
-  if (model) args.push("--model", model);
+  // Editing-enabled headless argv (sandboxed temp repo), provider-aware. Claude's
+  // own headlessArgs restrict to `--allowedTools mcp__nerveplane` (which blocks file
+  // edits), so we build Claude's editing argv directly with --dangerously-skip-permissions.
+  // Codex/opencode headlessArgs are already edit-capable (no MCP tool gate): codex uses
+  // `exec … --json --dangerously-bypass-approvals-and-sandbox`, opencode `run … --format json`.
+  const args =
+    provider.id === "claude"
+      ? ["-p", prompt, "--output-format", "json", "--dangerously-skip-permissions", ...(model ? ["--model", model] : [])]
+      : provider.headlessArgs(prompt, { model });
   const proc = Bun.spawn([provider.bin, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
   const out = await new Response(proc.stdout).text();
   await proc.exited;
@@ -311,6 +315,18 @@ function ci95(xs: number[]): number {
   const sd = Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / (xs.length - 1));
   return 1.96 * (sd / Math.sqrt(xs.length));
 }
+/** Wilson score 95% CI for a binomial proportion (correct at p=0 and p=1, unlike the
+ *  normal approximation) — the honest interval for a CTSR success rate at small K. */
+function wilson95(successes: number, n: number): [number, number] {
+  if (n === 0) return [0, 0];
+  const z = 1.959964;
+  const p = successes / n;
+  const denom = 1 + (z * z) / n;
+  const center = (p + (z * z) / (2 * n)) / denom;
+  const half = (z / denom) * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
+  return [Math.max(0, center - half), Math.min(1, center + half)];
+}
+const r2 = (x: number) => Number(x.toFixed(2));
 
 async function main() {
   const agent = process.env.NP_EVAL_AGENT ?? "";
@@ -348,9 +364,13 @@ async function main() {
       const os = rows[arm];
       const denom = os.reduce((n, o) => n + o.leakDenom, 0);
       const leakCount = os.map((o) => o.scopeLeaks).filter((x) => !Number.isNaN(x)).reduce((a, b) => a + b, 0);
+      const ctsrK = os.filter((o) => o.ctsr).length;
+      const [lo, hi] = wilson95(ctsrK, os.length);
       return {
         arm,
-        ctsr_rate: mean(os.map((o) => (o.ctsr ? 1 : 0))),
+        ctsr_rate: r2(mean(os.map((o) => (o.ctsr ? 1 : 0)))),
+        ctsr_successes: `${ctsrK}/${os.length}`,
+        ctsr_wilson95: [r2(lo), r2(hi)],
         merge_conflicts_mean: mean(os.map((o) => o.mergeConflicts)),
         merge_conflicts_ci95: Number(ci95(os.map((o) => o.mergeConflicts)).toFixed(3)),
         wasted_loc_mean: mean(os.map((o) => o.wastedLoc)),

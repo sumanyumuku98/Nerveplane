@@ -234,6 +234,7 @@ migrated AND consumer uses the new field AND no stale `amount` reference.
 | --- | --- | --- | --- |
 | frontier | 0.00 | 0.00 | **1.00** |
 | Haiku (`--model haiku`) | 0.00 | 0.00 | **0.60** |
+| OpenAI Codex (`NP_EVAL_AGENT=codex`) | 0.00 | 0.00 | **1.00** |
 
 **Findings.**
 - **The planner produces real outcome-lift with live agents.** C1-plan lands the
