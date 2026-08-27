@@ -18,9 +18,11 @@ repeated-mistake rate from 1.00 to 0.00 on both a strong and a weak model: a dec
 one session stops a later, differently sessioned agent from repeating it, an information effect no
 amount of model strength substitutes for. We also report what did \emph{not} help: at
 window-fitting scales, routing facts to agents does not rescue retrieval accuracy over long
-contexts; its value is cost and capacity, not attention. The coordination win is structural. It
-lives in work allocation, not model reasoning, so it survives stronger models rather than being
-erased by them.
+contexts; its value is cost and capacity, not attention. Methodologically, NP-Bench doubles as an
+environment-grounded \emph{verifier} for multi-agent coding: each agent passes its own checks, yet the
+integrated system can still be broken, and only a real merge-and-test reveals it. The coordination win
+is structural. It lives in work allocation, not model reasoning, so it survives stronger models rather
+than being erased by them.
 \end{abstract}
 
 \section{Introduction}
@@ -54,16 +56,24 @@ objection is the research question in disguise. A schedule helps only if (a) sco
 are handed. Neither is guaranteed; an agent told to stay out of a file may edit it anyway. Both are
 measurable, and that measurement is the contribution, not the tautology.
 
+There is a verification problem hiding in that measurement. Whether a coordination layer actually
+helps is not something an agent can self-report, and it is invisible to single-agent evaluation: each
+agent, checked on its own branch, looks correct; the breakage surfaces only when the branches are
+integrated. Deciding it needs an \emph{environment-grounded} verifier that reads ground-truth
+signals---does the merged tree build, does it pass, did the consumer adapt to the new
+contract---off a real integration rather than trusting any agent's word. NP-Bench is that verifier,
+and its three-arm design turns ``did coordination help'' from an assertion into a measurement.
+
 We make four claims and back each with data.
 \begin{enumerate}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
 \item \textbf{A formulation and a planner.} We cast coordination as disjoint-scope partitioning plus
 topological merge ordering, and implement a small, deterministic static planner
 (\Cref{sec:planner}).
-\item \textbf{An evaluation suite.} NP-Bench scores three arms (no coordination \arm{C0}, reactive
+\item \textbf{A verification benchmark.} NP-Bench scores three arms (no coordination \arm{C0}, reactive
 detection \arm{C1-detect}, proactive planning \arm{C1-plan}) both deterministically and with live
-agents from two model families, on the coordination axis that single-agent benchmarks like SWE-bench
-do not measure (\Cref{sec:npbench}). We present it as a focused study of \emph{when} coordination
-helps, not a comprehensive benchmark.
+agents from two model families, reading ground-truth integration signals off a real merge---the
+coordination axis that single-agent benchmarks like SWE-bench do not measure (\Cref{sec:npbench}). We
+present it as a focused study of \emph{when} coordination helps, not a comprehensive benchmark.
 \item \textbf{Results with an honest capability analysis.} The planner strictly dominates both
 baselines; a vague reactive warning is worth about as much as nothing to a live agent; and we
 separate the part of the effect that is capability-independent from the part that is not
@@ -543,14 +553,16 @@ the planner. When work is concurrent, agents are fast, or $N$ is large, the warn
 too late, and only scheduling helps. The deterministic sweep makes this concrete: the detector
 tracks no-coordination exactly under contention, and the gap to the planner grows with $N$.
 
-For the broader question of \emph{verifying} multi-agent systems, NP-Bench is an environment-grounded
-evaluator: it runs real agents in a real git integration and reads verifiable signals---clean-merge
-success, scope compliance, contract adaptation, cross-session decision adherence---directly off the
-merged tree, rather than trusting each agent's self-report. Coordination failures are invisible to
-single-agent evaluation: each agent, judged alone, did fine; the system still broke on integration.
-A three-arm design (nothing / reactive / proactive) turns ``did the coordination layer help'' into a
-measurement rather than an assertion, and the honest negative arm keeps it from being a demo dressed
-as a result.
+Verification is easiest where ground truth is unambiguous---formal proofs, competitive programming,
+passing test suites. Multi-agent code integration is one more such place: the merged tree either
+builds and passes its acceptance check or it does not. NP-Bench exploits that to \emph{verify}
+coordination end to end---it runs real agents in a real git integration and reads ground-truth
+signals (clean-merge success, scope compliance, contract adaptation, cross-session decision
+adherence) directly off the merged tree, rather than trusting each agent's self-report. Coordination
+failures are invisible to single-agent verification: each agent, judged alone, did fine; the system
+still broke on integration. The three-arm design (nothing / reactive / proactive) turns ``did the
+coordination layer help'' into a measurement rather than an assertion, and the honest negative arm
+keeps it from being a demo dressed as a result.
 
 \section{Threats to validity}
 \label{sec:threats}
