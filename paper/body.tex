@@ -7,7 +7,7 @@ agents get in each other's way: two rewrite the same function, one ships against
 teammate just changed, and integration fails after the work is already done. Most coordination
 tools treat this reactively---watch for a conflict, then warn---but under agent-speed concurrency
 the warning arrives after the wasted edit. We argue the problem is better posed as
-\emph{scheduling}: predict what each agent will touch, partition the work into disjoint scopes,
+\emph{scheduling}: take each work item's declared scope, partition the work into disjoint scopes,
 and order merges along the producer$\rightarrow$consumer dependency graph, all up front. We build
 this planner into \sysname, a local-first system for coding agents, and evaluate it
 with NP-Bench, an environment-grounded, three-arm benchmark (no coordination; reactive detection;
@@ -25,9 +25,9 @@ amount of model strength substitutes for. We also report what did \emph{not} hel
 window-fitting scales, routing facts to agents does not rescue retrieval accuracy over long
 contexts; its value is cost and capacity, not attention. Methodologically, NP-Bench doubles as an
 environment-grounded \emph{verifier} for multi-agent coding: each agent passes its own checks, yet the
-integrated system can still be broken, and only a real merge-and-test reveals it. Across the two capability tiers and two vendors we tested, the coordination win is
-structural: it lives in work allocation, not model reasoning, so it is not erased as models get
-stronger.
+integrated system can still be broken, and a real merge-and-test reveals it. Across the two capability
+tiers and two vendors we tested, the coordination benefit persists as model capability increases,
+consistent with a structural information-and-work-allocation effect.
 \end{abstract}
 
 \section{Introduction}
@@ -49,19 +49,19 @@ seconds. By the time a teammate's edit has been sensed and a warning routed, the
 often already written the conflicting code. The warning then buys a cleanup, not a prevention.
 
 This paper takes a different stance: \textbf{coordination among parallel coding agents is a
-scheduling problem}. Before the agents start, predict the \emph{scope} each will touch, partition
+scheduling problem}. Before the agents start, take each work item's declared \emph{scope}, partition
 the work so that concurrently-running agents have disjoint scopes, and order the merges along the
 producer$\rightarrow$consumer dependency graph so that whoever changes a contract lands before
 whoever consumes it. Where a reactive detector can only tell an agent it has a problem after the
 fact, a schedule prevents the problem by construction.
 
 There is an obvious objection: ``disjoint scopes don't conflict'' is a tautology. But that
-objection is the research question in disguise. A schedule helps only if (a) scopes can be
-\emph{predicted} before the work runs and (b) the agents actually \emph{respect} the scopes they
-are handed. In this paper the scopes are \emph{declared}---given by each work item's stated files
-and consumed contracts---and we measure (b): an agent told to stay out of a file may edit it anyway,
-and whether it complies is exactly what the live experiments check. Automatic scope prediction (a)
-is an open problem we flag but do not solve. The contribution is the measurement, not the tautology.
+objection is the research question in disguise. A schedule helps only if (a) its input scopes are
+accurate and (b) the agents actually \emph{respect} the scopes they are handed. In this paper the
+scopes are \emph{declared}---given by each work item's stated files and consumed contracts---so we
+assume (a) and measure (b): an agent told to stay out of a file may edit it anyway, and whether it
+complies is exactly what the live experiments check. Inferring scopes automatically is an open
+problem we flag but do not solve. The contribution is the compliance measurement, not the tautology.
 
 There is a verification problem hiding in that measurement. Whether a coordination layer actually
 helps is not something an agent can self-report, and it is invisible to single-agent evaluation: each
@@ -81,9 +81,10 @@ present it as a focused study of \emph{when} coordination helps, not a comprehen
 \item \textbf{A formulation and a planner.} We cast coordination as disjoint-scope partitioning plus
 topological merge ordering, and implement a small, deterministic static planner
 (\Cref{sec:planner}).
-\item \textbf{Results with an honest capability analysis.} The planner strictly dominates both
-baselines; a vague reactive warning is worth about as much as nothing to a live agent; and we
-separate the part of the effect that is capability-independent from the part that is not
+\item \textbf{Results with an honest capability analysis.} In the evaluated scenarios, the planner
+strictly dominates both baselines; a vague reactive warning is worth about as much as nothing to a
+live agent; and we separate the part of the effect that holds across the tested capability tiers
+from the part that varies with capability
 (\Cref{sec:results,sec:discussion}).
 \item \textbf{What did not work.} We tried to show that routing facts to agents rescues retrieval
 accuracy over long contexts and could not; we report that negative result and the measurement bug we
@@ -126,8 +127,9 @@ and the NP-hardness of the partitioning/coloring subproblem \citep{garey1979comp
 software structure mirrors team structure is Conway's observation \citep{conway1968committees}, and
 that adding people (or agents) to concurrent work raises coordination cost is Brooks's
 \citep{brooks1975mythical}. We adapt disjoint-partition-plus-topological-merge to the
-\emph{predicted code scopes} of LLM agents, where the novel question is empirical: can the scopes
-be predicted, and will the agents respect them?
+\emph{declared code scopes} of LLM agents, where the novel empirical question studied here is
+whether agents will respect the resulting assignments. Inferring those scopes automatically remains
+future work.
 
 \paragraph{Agent protocols and memory.} Agent tooling is standardizing on protocols for
 model-to-tool and agent-to-agent communication---the Model Context Protocol
@@ -243,7 +245,7 @@ merge slot \emph{before} the edits happen, rather than warning after a collision
 \section{Coordination as scheduling}
 \label{sec:planner}
 
-\paragraph{Model.} Let $W$ be a set of work items. Each item $w$ has a \emph{predicted scope}
+\paragraph{Model.} Let $W$ be a set of work items. Each item $w$ has a \emph{declared scope}
 $\sigma(w)$---the set of files (or symbols) it will write---and a set of contracts it
 \emph{consumes}. Two items \emph{conflict} when their scopes intersect,
 $\sigma(w_i)\cap\sigma(w_j)\neq\varnothing$. Item $w_j$ \emph{depends on} $w_i$ (edge
@@ -251,12 +253,12 @@ $w_i\!\rightarrow\!w_j$) when $w_j$ consumes a contract that $w_i$ produces, i.e
 overlaps $w_j$'s consumed set. A \emph{plan} is a partition of $W$ into batches whose members have
 pairwise-disjoint scopes, together with a merge order $\pi$ that respects the dependency edges.
 
-\paragraph{Claim (assumption-scoped).} If the predicted scopes are accurate and the dependency
+\paragraph{Claim (assumption-scoped).} If the declared scopes are accurate and the dependency
 relation is a DAG, then a disjoint-scope partition plus a topological merge order yields
 \emph{zero} structural conflicts by construction: concurrently-running items never touch the same
 file, and no consumer is merged before its producer. A reactive detector cannot make this guarantee
-because it acts only after a collision has been sensed. The claim's premises are exactly the
-empirical unknowns (scope-prediction accuracy and agent scope-compliance), which we measure in
+because it acts only after a collision has been sensed. Scope accuracy is assumed through the
+hand-declared inputs; agent scope-compliance is the empirical unknown measured in
 \Cref{sec:results}.
 
 \paragraph{Algorithm.} \Cref{alg:plan} is the static planner. It
@@ -302,7 +304,11 @@ NP-Bench compares three arms. \arm{C0} is no coordination: agents act blind to o
 \arm{C1-detect} is reactive coordination: an agent is warned when a teammate's sensed change touches
 a file it cares about, and (for live agents) the warning is deliberately vague---``a teammate may
 be editing $X$''---because that is what a realistic just-in-time warning looks like. \arm{C1-plan}
-is the proactive planner: each agent receives a disjoint scope and a merge slot before it starts.
+is the proactive planner: before starting, an agent receives either an allowed/forbidden scope or,
+for a contract consumer, the exact contract migration and an instruction to code against the new
+shape after the producer merges. The plan also supplies the merge order. Thus the live comparison
+evaluates the combined effect of timing, information specificity, scope assignment, and merge
+ordering rather than isolating any one component.
 
 The suite runs at two tiers. \textbf{Tier A} is a deterministic simulation that drives the real
 product primitives---agent registration, worktree sensing, conflict detection, and the
@@ -417,9 +423,9 @@ Wilson 95\% confidence intervals on the planner arm.
 \begin{table}[t]
 \centering\small
 \caption{Live contract-migration \ctsr{} across two model families, with Wilson 95\% CIs on the
-planner arm. The signal is capability- and vendor-independent (all three models fail at 0.00 without
-it); acting on the plan is partly capability-dependent (the two frontier models $1.00$, the small
-model $0.60$). On the frontier model the planner and baselines separate with non-overlapping
+planner arm. The result holds across the tested capability tiers and two vendors (all three models
+fail at 0.00 without the signal); acting on the plan varies with capability (the two frontier models
+$1.00$, the small model $0.60$). On the frontier model the planner and baselines separate with non-overlapping
 intervals (15/15 vs.\ 0/15; Fisher's exact $p<10^{-4}$).}
 \label{tab:contract}
 \begin{tabular}{@{}lccccc@{}}
@@ -501,7 +507,7 @@ by non-compliance; real agents honor it.
 
 The results above concern work allocation. A separate experiment concerns knowledge. No model,
 however strong, can recall a project-specific fact it was never told; if one session discovers a
-gotcha and records it, a later, differently-sessioned agent should stop repeating the mistake---but
+gotcha and records it, an agent in a later session should stop repeating the mistake---but
 only if memory carries the discovery across sessions. We built a sandbox repository with two
 symmetric authentication backends that both export the same function, where which one is sanctioned
 appears nowhere in the code---it is a team decision that lives only in memory. Session~1 records the
@@ -547,20 +553,21 @@ import line, the merged field) rather than on prose mentions.
 \section{Discussion}
 \label{sec:discussion}
 
-The live contract result has a two-layer structure worth naming. The coordination \emph{signal} is
-capability-independent: without it, a frontier model, a small model, and a second vendor's model all
-fail at 0.00, because the fact is absent from their context, not beyond their reasoning.
+The live contract result has a two-layer structure worth naming. The coordination \emph{signal}
+helps across the tested capability tiers: without it, a frontier model, a small model, and a second
+vendor's model all fail at 0.00, because the fact is absent from their context, not beyond their reasoning.
 \emph{Acting} on the signal is partly capability-dependent: given the same plan, the frontier models
 adapt perfectly (1.00) and the small model most of the time (0.60), with the misses tracing to
 weaker execution (a stray edit, an incomplete migration) rather than to missing information. That
 split matters for anyone worried that better models will make coordination unnecessary. On the
 evidence here the information half is not closed by scale; the execution half already benefits from it.
 
-It also explains when reactive detection is enough and when it is not. When dependencies are
-sequential and agents are slow relative to sensing, a warning lands in time and the detector matches
-the planner. When work is concurrent, agents are fast, or $N$ is large, the warning is structurally
-too late, and only scheduling helps. The deterministic sweep makes this concrete: the detector
-tracks no-coordination exactly under contention, and the gap to the planner grows with $N$.
+It also explains when reactive detection is enough and when it is not. In the deterministic timing
+model, a warning lands in time on sequential dependencies and the detector matches the planner. Under
+scripted concurrent contention the warning arrives after the edit, so the detector tracks
+no-coordination and the gap to the planner grows with $N$. In the live study, where timing and
+information specificity change together, the evidence supports the combined proactive intervention
+rather than scheduling alone.
 
 Verification is easiest where ground truth is unambiguous---formal proofs, competitive programming,
 passing test suites. Multi-agent code integration is one more such place: the merged tree either
@@ -586,8 +593,8 @@ $[0.00,0.20]$ (Fisher's exact $p<10^{-4}$). The remaining live cells are $K{=}5$
 intervals, and the scenarios are hand-constructed; larger $K$ across every cell and a broader
 scenario set are the obvious next runs.
 
-The most important limitation is scope prediction. In these experiments the predicted scopes are
-\emph{hand-seeded} in the harness (each item's declared files and consumed contracts), not inferred
+The most important limitation is scope inference. In these experiments the declared scopes are
+\emph{hand-seeded} in the harness (each item's stated files and consumed contracts), not inferred
 from natural-language tasks. The planner's guarantee is only as good as those scopes, and inferring
 them automatically (from a symbol graph or the service graph) is unbuilt work, not a solved
 component; we claim the scheduling result, not automatic scope inference. Scope-leakage is also
@@ -600,16 +607,16 @@ future work.
 \section{Conclusion}
 \label{sec:conclusion}
 
-Parallel coding agents fail at the seams, and the seams are a scheduling problem. Predict what each
-agent will touch and schedule around it---disjoint scopes for concurrent work, producers merged
+Parallel coding agents fail at the seams, and the seams are a scheduling problem. Given declared
+scopes, schedule around them---disjoint scopes for concurrent work, producers merged
 before their consumers---and conflict cleanup becomes conflict prevention. On NP-Bench the planner lifts
 deterministic clean-integration from 1/9 to 9/9 and, with live agents from two vendors, rescues a
 breaking contract change that no-coordination and reactive detection both miss (0.00/0.00$\rightarrow$1.00
 on the frontier models, 0.60 on a small one), while agents respect their assigned scopes. A
 cross-session memory closes a repeated-mistake gap identically on strong and weak models. And routing
 facts to agents, which we expected to rescue long-context accuracy, does not at window-fitting
-scales---its value is cost and capacity. The throughline is that the coordination win is structural:
-it lives in how work is allocated, so---across the models we tested---stronger models sharpen it rather than erase it. The open
+scales---its value is cost and capacity. The throughline is that the coordination benefit persists
+across the models we tested, consistent with an effect rooted in information and work allocation. The open
 frontier is turning hand-seeded scopes into inferred ones, adding dynamic re-planning as work
 changes, and moving from advisory scopes to enforced ones.
 
@@ -620,4 +627,3 @@ nondeterministic and reported with Wilson 95\% confidence intervals.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
-
