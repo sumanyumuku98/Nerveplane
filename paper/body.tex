@@ -1,4 +1,7 @@
 \begin{abstract}
+How do you verify that a team of coding agents actually works together? Each agent can pass its
+own tests while the integrated system silently breaks---a failure single-agent evaluation never
+sees. We study this in the setting where it bites hardest.
 Teams increasingly run several LLM coding agents in parallel on the same codebase, and the
 agents get in each other's way: two rewrite the same function, one ships against a contract a
 teammate just changed, and integration fails after the work is already done. Most coordination
@@ -6,23 +9,25 @@ tools treat this reactively---watch for a conflict, then warn---but under agent-
 the warning arrives after the wasted edit. We argue the problem is better posed as
 \emph{scheduling}: predict what each agent will touch, partition the work into disjoint scopes,
 and order merges along the producer$\rightarrow$consumer dependency graph, all up front. We build
-this planner into \sysname, a local-first coordination plane for coding agents, and evaluate it
-with NP-Bench, a three-arm evaluation suite (no coordination; reactive detection; proactive
-planning) that runs both as a deterministic simulation and with live agents. Deterministically, the
+this planner into \sysname, a local-first system for coding agents, and evaluate it
+with NP-Bench, an environment-grounded, three-arm benchmark (no coordination; reactive detection;
+proactive planning) that verifies integration outcomes off a real git merge, both as a
+deterministic simulation and with live agents. Deterministically, the
 planner lifts clean-integration success from 1/9 to 9/9 scenarios and drives merge conflicts from
 13 to 0; its advantage grows with the number of agents. With live agents on a breaking contract
-change, the planner rescues an outcome that both no-coordination and reactive detection miss on
-every seed (0.00/0.00$\rightarrow$1.00 on a frontier model; 0.00/0.00$\rightarrow$0.60 on a small
-one), and agents respect their assigned scopes (0/5 leakage). A separate memory result collapses the
+change, the planner rescues an outcome that both baselines miss on every seed: a clean-integration
+rate of 0 under no-coordination and under reactive detection rises to 1.0 with the planner on a
+frontier model, and to 0.6 on a small one, while agents respect their assigned scopes (none of 5
+strayed). A separate memory result collapses the
 repeated-mistake rate from 1.00 to 0.00 on both a strong and a weak model: a decision recorded in
-one session stops a later, differently sessioned agent from repeating it, an information effect no
+one session stops an agent in a later session from repeating it, an information effect no
 amount of model strength substitutes for. We also report what did \emph{not} help: at
 window-fitting scales, routing facts to agents does not rescue retrieval accuracy over long
 contexts; its value is cost and capacity, not attention. Methodologically, NP-Bench doubles as an
 environment-grounded \emph{verifier} for multi-agent coding: each agent passes its own checks, yet the
-integrated system can still be broken, and only a real merge-and-test reveals it. The coordination win
-is structural. It lives in work allocation, not model reasoning, so it survives stronger models rather
-than being erased by them.
+integrated system can still be broken, and only a real merge-and-test reveals it. Across the two capability tiers and two vendors we tested, the coordination win is
+structural: it lives in work allocation, not model reasoning, so it is not erased as models get
+stronger.
 \end{abstract}
 
 \section{Introduction}
@@ -51,29 +56,31 @@ whoever consumes it. Where a reactive detector can only tell an agent it has a p
 fact, a schedule prevents the problem by construction.
 
 There is an obvious objection: ``disjoint scopes don't conflict'' is a tautology. But that
-objection is the research question in disguise. A schedule helps only if (a) scopes can actually be
-\emph{predicted} before the work runs, and (b) the agents actually \emph{respect} the scopes they
-are handed. Neither is guaranteed; an agent told to stay out of a file may edit it anyway. Both are
-measurable, and that measurement is the contribution, not the tautology.
+objection is the research question in disguise. A schedule helps only if (a) scopes can be
+\emph{predicted} before the work runs and (b) the agents actually \emph{respect} the scopes they
+are handed. In this paper the scopes are \emph{declared}---given by each work item's stated files
+and consumed contracts---and we measure (b): an agent told to stay out of a file may edit it anyway,
+and whether it complies is exactly what the live experiments check. Automatic scope prediction (a)
+is an open problem we flag but do not solve. The contribution is the measurement, not the tautology.
 
 There is a verification problem hiding in that measurement. Whether a coordination layer actually
 helps is not something an agent can self-report, and it is invisible to single-agent evaluation: each
 agent, checked on its own branch, looks correct; the breakage surfaces only when the branches are
-integrated. Deciding it needs an \emph{environment-grounded} verifier that reads ground-truth
+integrated. Answering it takes an \emph{environment-grounded} verifier that reads ground-truth
 signals---does the merged tree build, does it pass, did the consumer adapt to the new
 contract---off a real integration rather than trusting any agent's word. NP-Bench is that verifier,
 and its three-arm design turns ``did coordination help'' from an assertion into a measurement.
 
 We make four claims and back each with data.
 \begin{enumerate}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
-\item \textbf{A formulation and a planner.} We cast coordination as disjoint-scope partitioning plus
-topological merge ordering, and implement a small, deterministic static planner
-(\Cref{sec:planner}).
 \item \textbf{A verification benchmark.} NP-Bench scores three arms (no coordination \arm{C0}, reactive
 detection \arm{C1-detect}, proactive planning \arm{C1-plan}) both deterministically and with live
 agents from two model families, reading ground-truth integration signals off a real merge---the
 coordination axis that single-agent benchmarks like SWE-bench do not measure (\Cref{sec:npbench}). We
 present it as a focused study of \emph{when} coordination helps, not a comprehensive benchmark.
+\item \textbf{A formulation and a planner.} We cast coordination as disjoint-scope partitioning plus
+topological merge ordering, and implement a small, deterministic static planner
+(\Cref{sec:planner}).
 \item \textbf{Results with an honest capability analysis.} The planner strictly dominates both
 baselines; a vague reactive warning is worth about as much as nothing to a live agent; and we
 separate the part of the effect that is capability-independent from the part that is not
@@ -128,8 +135,8 @@ model-to-tool and agent-to-agent communication---the Model Context Protocol
 surface over MCP but adds the missing piece those protocols leave open: what to route, to whom, and
 in what order. On memory, systems such as MemGPT \citep{packer2023memgpt} and generative agents
 \citep{park2023generative} give an agent long-term recall within its own task. Our memory result is
-cross-session and cross-agent: a decision recorded by one session prevents a later, differently
-sessioned agent from repeating a mistake, and we isolate it as an information effect that holds
+cross-session and cross-agent: a decision recorded by one session prevents an agent in a later
+session from repeating a mistake, and we isolate it as an information effect that holds
 equally on strong and weak models.
 
 \Cref{tab:related} places these lines side by side.
@@ -158,11 +165,11 @@ Agent memory (MemGPT, gen.\ agents) & partial & n/a & n/a & no \\
 
 The planner does not run in a vacuum; it needs to know what agents exist, what they are touching,
 and how services depend on one another. \sysname supplies that substrate. It is a local-first
-coordination plane for coding agents: a single per-machine daemon, a SQLite store, and a set of
+system for coding agents: a single per-machine daemon, a SQLite store, and a set of
 tools exposed over MCP (\code{register}, \code{sync}, \code{publish}, \code{decision},
 \code{discover}, \code{chat}, \code{memory}, and \code{task}); the planner runs inside the daemon
 and delivers each agent's assignment through \code{register}/\code{sync}. It is
-agent-agnostic---Claude Code, Codex, and opencode all connect through the same surface.
+agent-agnostic---Claude Code, Codex, and OpenCode all connect through the same surface.
 
 The design choice that matters for coordination is that the daemon observes state rather than
 waiting to be told about it. A \emph{passive sensing} loop polls each registered agent's git
@@ -471,8 +478,10 @@ Three things stand out. First, the planner lands the breaking change where both 
 every seed (the frontier models) or most seeds (Haiku). Second, \arm{C1-detect} equals \arm{C0} at
 0.00 on every model: the raw replies show the consumer knew ``something may change'' and still coded
 to the stale field. A heads-up without the specifics and a merge order buys nothing---only the
-explicit up-front assignment carries the contract shape the agent needs. This is the
-detector-to-planner thesis in one line. Third, the failure of \arm{C0} is not a capability failure:
+explicit up-front assignment carries the contract shape the agent needs. We read this as the
+\emph{combined} planner intervention---up-front timing together with the exact scope and
+contract---beating a vague, late warning; the live setting does not isolate timing from information
+specificity, and the detailed-but-late ablation that would (\Cref{sec:threats}) is future work. Third, the failure of \arm{C0} is not a capability failure:
 the information the consumer needs is simply not in its worktree, so no amount of model strength
 recovers it---and the same pattern holds across a second vendor's model, so it is not a
 Claude-specific artifact.
@@ -544,8 +553,8 @@ fail at 0.00, because the fact is absent from their context, not beyond their re
 \emph{Acting} on the signal is partly capability-dependent: given the same plan, the frontier models
 adapt perfectly (1.00) and the small model most of the time (0.60), with the misses tracing to
 weaker execution (a stray edit, an incomplete migration) rather than to missing information. That
-split matters for anyone worried that better models will make coordination unnecessary. The
-information half will not be closed by scale; the execution half already benefits from it.
+split matters for anyone worried that better models will make coordination unnecessary. On the
+evidence here the information half is not closed by scale; the execution half already benefits from it.
 
 It also explains when reactive detection is enough and when it is not. When dependencies are
 sequential and agents are slow relative to sensing, a warning lands in time and the detector matches
@@ -600,7 +609,7 @@ on the frontier models, 0.60 on a small one), while agents respect their assigne
 cross-session memory closes a repeated-mistake gap identically on strong and weak models. And routing
 facts to agents, which we expected to rescue long-context accuracy, does not at window-fitting
 scales---its value is cost and capacity. The throughline is that the coordination win is structural:
-it lives in how work is allocated, so stronger models sharpen it rather than erase it. The open
+it lives in how work is allocated, so---across the models we tested---stronger models sharpen it rather than erase it. The open
 frontier is turning hand-seeded scopes into inferred ones, adding dynamic re-planning as work
 changes, and moving from advisory scopes to enforced ones.
 
