@@ -176,7 +176,8 @@ waiting to be told about it. A \emph{passive sensing} loop polls each registered
 worktree and emits an event when the changed-file set actually changes, so coordination never
 depends on an agent remembering to announce its work.\footnote{\ifanon The system and the NP-Bench
 harness are released as open source (repository name, URL, and version withheld for anonymity).\else
-The system and the NP-Bench harness are open source (\sysname v0.17.0).\fi} A routing engine then decides who
+The system and the NP-Bench harness are open source (\sysname v0.17.0,
+\url{https://github.com/sumanyumuku98/Nerveplane}).\fi} A routing engine then decides who
 needs to hear about a given change: the owner of an affected task, other agents in the
 same repository, and---through a service graph---agents in \emph{other} repositories that consume a
 changed API contract. Durable project decisions live in a queryable ledger separate from chat
