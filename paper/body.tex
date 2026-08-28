@@ -1,7 +1,6 @@
 \begin{abstract}
-How do you verify that a team of coding agents actually works together? Each agent can pass its
-own tests while the integrated system silently breaks---a failure single-agent evaluation never
-sees. We study this in the setting where it bites hardest.
+A team of coding agents can look fine agent by agent and still fail as a team: each one passes its
+own tests while the merged result is broken, and single-agent evaluation never catches it.
 Teams increasingly run several LLM coding agents in parallel on the same codebase, and the
 agents get in each other's way: two rewrite the same function, one ships against a contract a
 teammate just changed, and integration fails after the work is already done. Most coordination
@@ -26,8 +25,8 @@ window-fitting scales, routing facts to agents does not rescue retrieval accurac
 contexts; its value is cost and capacity, not attention. Methodologically, NP-Bench doubles as an
 environment-grounded \emph{verifier} for multi-agent coding: each agent passes its own checks, yet the
 integrated system can still be broken, and a real merge-and-test reveals it. Across the two capability
-tiers and two vendors we tested, the coordination benefit persists as model capability increases,
-consistent with a structural information-and-work-allocation effect.
+tiers and two vendors we tested, the benefit did not shrink as models got stronger, because it comes
+from how work is allocated rather than from model reasoning.
 \end{abstract}
 
 \section{Introduction}
@@ -412,8 +411,8 @@ conflicts at every scale. Wasted LOC follows the same shape at $\approx 4(n{-}1)
 
 \subsection{Live agents: the planner lifts clean-integration outcomes}
 
-Deterministic results can be discounted as a simulation we designed. The live results are
-the load-bearing evidence. In the contract-migration scenario, a producer renames an invoice money
+Deterministic results can be dismissed as a simulation we built, so the live runs are the main
+evidence. In the contract-migration scenario, a producer renames an invoice money
 field (\code{amount} in dollars $\rightarrow$ \code{amountCents} in integer cents); the consumer,
 working from the old contract in its own worktree, implements a total. The two files merge cleanly,
 but the consumer is semantically broken unless it adapts. \Cref{tab:contract} gives \ctsr{} for
@@ -480,16 +479,16 @@ $K{=}5$.}
 \label{fig:live}
 \end{figure}
 
-Three things stand out. First, the planner lands the breaking change where both baselines fail on
-every seed (the frontier models) or most seeds (Haiku). Second, \arm{C1-detect} equals \arm{C0} at
-0.00 on every model: the raw replies show the consumer knew ``something may change'' and still coded
-to the stale field. A heads-up without the specifics and a merge order buys nothing---only the
+The planner lands the breaking change where both baselines fail on
+every seed (the frontier models) or most seeds (Haiku). \arm{C1-detect} does no better than \arm{C0},
+sitting at 0.00 on every model: the raw replies show the consumer knew ``something may change'' and still coded
+to the stale field. A heads-up without the specifics and a merge order buys nothing; only the
 explicit up-front assignment carries the contract shape the agent needs. We read this as the
-\emph{combined} planner intervention---up-front timing together with the exact scope and
-contract---beating a vague, late warning; the live setting does not isolate timing from information
-specificity, and the detailed-but-late ablation that would (\Cref{sec:threats}) is future work. Third, the failure of \arm{C0} is not a capability failure:
+\emph{combined} planner intervention (up-front timing together with the exact scope and
+contract) beating a vague, late warning. The live setting does not isolate timing from information
+specificity, and the detailed-but-late ablation that would (\Cref{sec:threats}) is future work. The failure of \arm{C0} is not a capability failure:
 the information the consumer needs is simply not in its worktree, so no amount of model strength
-recovers it---and the same pattern holds across a second vendor's model, so it is not a
+recovers it, and the same pattern holds across a second vendor's model, so it is not a
 Claude-specific artifact.
 
 The fan-out version scales that scenario: one producer migrates the contract and $N$ consumers each
@@ -521,10 +520,10 @@ and import the sanctioned module.
 \section{What did not work}
 \label{sec:negatives}
 
-We set out expecting a second, flashier result: that routing a needed fact to an agent would rescue
-its \emph{accuracy} over a long, distracting context---an ``attention rescue'' to complement the
-lost-in-the-middle literature \citep{liu2024lost}. It did not hold, and we report that plainly
-because it changes what one should claim for context routing.
+We initially hypothesized a second result: that routing a needed fact to an agent would rescue
+its \emph{accuracy} over a long, distracting context, an ``attention rescue'' to complement the
+lost-in-the-middle literature \citep{liu2024lost}. It did not hold. We report it anyway, because it
+changes what one should claim for context routing.
 
 At the modest scales we first tested, a frontier model recalled a fact buried at any position with
 100\% adherence---no U-shaped dip. We then built a harder, size-swept test: a single agent must
@@ -553,7 +552,7 @@ import line, the merged field) rather than on prose mentions.
 \section{Discussion}
 \label{sec:discussion}
 
-The live contract result has a two-layer structure worth naming. The coordination \emph{signal}
+The live contract result splits cleanly in two. The coordination \emph{signal}
 helps across the tested capability tiers: without it, a frontier model, a small model, and a second
 vendor's model all fail at 0.00, because the fact is absent from their context, not beyond their reasoning.
 \emph{Acting} on the signal is partly capability-dependent: given the same plan, the frontier models
@@ -576,9 +575,9 @@ coordination end to end---it runs real agents in a real git integration and read
 signals (clean-merge success, scope compliance, contract adaptation, cross-session decision
 adherence) directly off the merged tree, rather than trusting each agent's self-report. Coordination
 failures are invisible to single-agent verification: each agent, judged alone, did fine; the system
-still broke on integration. The three-arm design (nothing / reactive / proactive) turns ``did the
-coordination layer help'' into a measurement rather than an assertion, and the honest negative arm
-keeps it from being a demo dressed as a result.
+still broke on integration. The three-arm design (nothing / reactive / proactive) lets us measure
+whether the coordination layer helped instead of asserting it, and the negative arm guards against
+overclaiming.
 
 \section{Threats to validity}
 \label{sec:threats}
@@ -607,18 +606,18 @@ future work.
 \section{Conclusion}
 \label{sec:conclusion}
 
-Parallel coding agents fail at the seams, and the seams are a scheduling problem. Given declared
-scopes, schedule around them---disjoint scopes for concurrent work, producers merged
-before their consumers---and conflict cleanup becomes conflict prevention. On NP-Bench the planner lifts
+Parallel coding agents collide at integration, and that collision is a scheduling problem. Given declared
+scopes, scheduling around them (disjoint scopes for concurrent work, producers merged
+before their consumers) turns conflict cleanup into conflict prevention. On NP-Bench the planner lifts
 deterministic clean-integration from 1/9 to 9/9 and, with live agents from two vendors, rescues a
 breaking contract change that no-coordination and reactive detection both miss (0.00/0.00$\rightarrow$1.00
 on the frontier models, 0.60 on a small one), while agents respect their assigned scopes. A
-cross-session memory closes a repeated-mistake gap identically on strong and weak models. And routing
+cross-session memory closes a repeated-mistake gap identically on strong and weak models. Routing
 facts to agents, which we expected to rescue long-context accuracy, does not at window-fitting
-scales---its value is cost and capacity. The throughline is that the coordination benefit persists
-across the models we tested, consistent with an effect rooted in information and work allocation. The open
-frontier is turning hand-seeded scopes into inferred ones, adding dynamic re-planning as work
-changes, and moving from advisory scopes to enforced ones.
+scales; its value is cost and capacity. The benefit held across the models we tested because it comes
+from how work is allocated, not from model reasoning. What remains open is inferring scopes
+automatically rather than hand-seeding them, re-planning as work changes, and moving from advisory
+scopes to enforced ones.
 
 \paragraph{Reproducibility.} \ifanon The system and the NP-Bench harness are released as open source
 (repository withheld for anonymity).\else The system (\sysname v0.17.0) and the NP-Bench harness are
