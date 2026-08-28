@@ -4,7 +4,7 @@ own tests while the merged result is broken, and single-agent evaluation never c
 Teams increasingly run several LLM coding agents in parallel on the same codebase, and the
 agents get in each other's way: two rewrite the same function, one ships against a contract a
 teammate just changed, and integration fails after the work is already done. Most coordination
-tools treat this reactively---watch for a conflict, then warn---but under agent-speed concurrency
+tools treat this reactively (watch for a conflict, then warn), but under agent-speed concurrency
 the warning arrives after the wasted edit. We argue the problem is better posed as
 \emph{scheduling}: take each work item's declared scope, partition the work into disjoint scopes,
 and order merges along the producer$\rightarrow$consumer dependency graph, all up front. We build
@@ -57,7 +57,7 @@ fact, a schedule prevents the problem by construction.
 There is an obvious objection: ``disjoint scopes don't conflict'' is a tautology. But that
 objection is the research question in disguise. A schedule helps only if (a) its input scopes are
 accurate and (b) the agents actually \emph{respect} the scopes they are handed. In this paper the
-scopes are \emph{declared}---given by each work item's stated files and consumed contracts---so we
+scopes are \emph{declared} (given by each work item's stated files and consumed contracts), so we
 assume (a) and measure (b): an agent told to stay out of a file may edit it anyway, and whether it
 complies is exactly what the live experiments check. Inferring scopes automatically is an open
 problem we flag but do not solve. The contribution is the compliance measurement, not the tautology.
@@ -66,15 +66,15 @@ There is a verification problem hiding in that measurement. Whether a coordinati
 helps is not something an agent can self-report, and it is invisible to single-agent evaluation: each
 agent, checked on its own branch, looks correct; the breakage surfaces only when the branches are
 integrated. Answering it takes an \emph{environment-grounded} verifier that reads ground-truth
-signals---does the merged tree build, does it pass, did the consumer adapt to the new
-contract---off a real integration rather than trusting any agent's word. NP-Bench is that verifier,
+signals (does the merged tree build, does it pass, did the consumer adapt to the new
+contract) off a real integration rather than trusting any agent's word. NP-Bench is that verifier,
 and its three-arm design turns ``did coordination help'' from an assertion into a measurement.
 
 We make four claims and back each with data.
 \begin{enumerate}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
 \item \textbf{A verification benchmark.} NP-Bench scores three arms (no coordination \arm{C0}, reactive
 detection \arm{C1-detect}, proactive planning \arm{C1-plan}) both deterministically and with live
-agents from two model families, reading ground-truth integration signals off a real merge---the
+agents from two model families, reading ground-truth integration signals off a real merge, the
 coordination axis that single-agent benchmarks like SWE-bench do not measure (\Cref{sec:npbench}). We
 present it as a focused study of \emph{when} coordination helps, not a comprehensive benchmark.
 \item \textbf{A formulation and a planner.} We cast coordination as disjoint-scope partitioning plus
@@ -109,14 +109,14 @@ single-repository task success: SWE-bench resolves real GitHub issues \citep{jim
 SWE-agent studies the agent-computer interface that drives such resolution
 \citep{yang2024sweagent}, and execution benchmarks like HumanEval \citep{chen2021codex} and
 LiveCodeBench \citep{jain2024livecodebench} score generated code. None measures whether $N$ agents
-working in parallel integrate cleanly. NP-Bench adds exactly that axis---clean-merge success,
-wasted work, and scope compliance for \emph{concurrent} agents---and is orthogonal to per-task
+working in parallel integrate cleanly. NP-Bench adds exactly that axis (clean-merge success,
+wasted work, and scope compliance for \emph{concurrent} agents) and is orthogonal to per-task
 resolution.
 
 \paragraph{Conflict detection and developer coordination.} Proactively predicting merge conflicts
 by watching parallel edits is a long line in software engineering
 \citep{brun2011proactive}. This is the intellectual ancestor of the \arm{C1-detect} arm: valuable,
-but reactive---the warning fires once a change is observed, which under agent-speed concurrency is
+but reactive: the warning fires once a change is observed, which under agent-speed concurrency is
 frequently after the wasted edit. We show empirically that a proactive schedule dominates reactive
 detection, and that a vague reactive warning is close to no coordination for a live agent.
 
@@ -170,7 +170,7 @@ system for coding agents: a single per-machine daemon, a SQLite store, and a set
 tools exposed over MCP (\code{register}, \code{sync}, \code{publish}, \code{decision},
 \code{discover}, \code{chat}, \code{memory}, and \code{task}); the planner runs inside the daemon
 and delivers each agent's assignment through \code{register}/\code{sync}. It is
-agent-agnostic---Claude Code, Codex, and OpenCode all connect through the same surface.
+agent-agnostic: Claude Code, Codex, and OpenCode all connect through the same surface.
 
 The design choice that matters for coordination is that the daemon observes state rather than
 waiting to be told about it. A \emph{passive sensing} loop polls each registered agent's git
@@ -179,7 +179,7 @@ depends on an agent remembering to announce its work.\footnote{\ifanon The syste
 harness are released as open source (repository name, URL, and version withheld for anonymity).\else
 The system and the NP-Bench harness are open source (\sysname v0.17.0).\fi} A routing engine then decides who
 needs to hear about a given change: the owner of an affected task, other agents in the
-same repository, and---through a service graph---agents in \emph{other} repositories that consume a
+same repository, and, through a service graph, agents in \emph{other} repositories that consume a
 changed API contract. Durable project decisions live in a queryable ledger separate from chat
 history, and a cross-agent memory (keyword by default, optionally semantic) lets a fact learned in
 one session resurface in another. \Cref{fig:arch} sketches the loop.
@@ -236,7 +236,7 @@ route by relevance and, with the planner, act \emph{before} the edits happen rat
   {delivered to agents at \code{register}\,/\,\code{sync}};
 \end{tikzpicture}}
 \caption{\sysname observes each agent's worktree by polling git (\emph{passive sensing}), then
-routes only the relevant events and---with the planner---hands each agent a disjoint scope and a
+routes only the relevant events and, with the planner, hands each agent a disjoint scope and a
 merge slot \emph{before} the edits happen, rather than warning after a collision is sensed.}
 \label{fig:arch}
 \end{figure}
@@ -266,7 +266,7 @@ contend for an owned file or because they consume a produced contract), computes
 topological order by Kahn's algorithm \citep{kahn1962topological} with deterministic cycle
 breaking, and greedily colors the scope-overlap graph into parallel batches. Exact minimum coloring
 is NP-hard \citep{garey1979computers}; the greedy pass is a documented approximation and is enough
-for the suite. Every tie breaks on input order, so a given input always yields the same plan---a
+for the suite. Every tie breaks on input order, so a given input always yields the same plan, a
 requirement for reproducible experiments. The item's assignment (its scope, merge slot, and a
 human-readable reason when it was reassigned) is delivered to the agent at \code{register}/\code{sync}
 time.
@@ -301,8 +301,8 @@ reactive detector can only deliver after the agent has already edited.
 
 NP-Bench compares three arms. \arm{C0} is no coordination: agents act blind to one another.
 \arm{C1-detect} is reactive coordination: an agent is warned when a teammate's sensed change touches
-a file it cares about, and (for live agents) the warning is deliberately vague---``a teammate may
-be editing $X$''---because that is what a realistic just-in-time warning looks like. \arm{C1-plan}
+a file it cares about, and (for live agents) the warning is deliberately vague (``a teammate may
+be editing $X$''), because that is what a realistic just-in-time warning looks like. \arm{C1-plan}
 is the proactive planner: before starting, an agent receives either an allowed/forbidden scope or,
 for a contract consumer, the exact contract migration and an instruction to code against the new
 shape after the producer merges. The plan also supplies the merge order. Thus the live comparison
@@ -323,7 +323,7 @@ We report the following metrics. \emph{\ctsr{}} (clean-tree success rate) is the
 that both merge without conflict and pass a post-integration acceptance check. \emph{Merge
 conflicts} and \emph{wasted LOC} count git conflicts and the lines in conflicting edits that must
 be reworked. \emph{Scope-leakage} is the fraction of reassigned \arm{C1-plan} agents that edited a
-file they were told not to---0 means full compliance. \emph{Consumer-adaptation rate} is the
+file they were told not to; 0 means full compliance. \emph{Consumer-adaptation rate} is the
 fraction of fan-out consumers whose merged code uses the new contract field. \emph{Repeated-mistake
 rate} is one minus adherence to a prior session's recorded decision. \emph{Merge-order correctness}
 checks that every producer is ordered before its consumers.
@@ -371,7 +371,7 @@ and concurrent/high-$N$ variants), \ctsr{} rises from 1/9 under \arm{C0} to 4/9 
 \arm{C1-detect} to 9/9 under \arm{C1-plan}; total merge conflicts fall 13$\rightarrow$12$\rightarrow$0
 and wasted LOC 54$\rightarrow$49$\rightarrow$0. The
 gap between the two coordination arms is the point. On \emph{sequential} dependency scenarios the
-reactive detector and the planner tie---both fix the problem, because the warning has time to
+reactive detector and the planner tie: both fix the problem, because the warning has time to
 land. On \emph{concurrent} scenarios the detector collapses to the \arm{C0} baseline: the warning
 arrives after the edit. The planner does not, because it never let the collision be scheduled in
 the first place. On the control scenario (unrelated tasks) all three arms succeed and the plane
@@ -416,7 +416,7 @@ evidence. In the contract-migration scenario, a producer renames an invoice mone
 field (\code{amount} in dollars $\rightarrow$ \code{amountCents} in integer cents); the consumer,
 working from the old contract in its own worktree, implements a total. The two files merge cleanly,
 but the consumer is semantically broken unless it adapts. \Cref{tab:contract} gives \ctsr{} for
-three models across two vendors---the pivotal frontier cell at $K{=}15$, the others at $K{=}5$---with
+three models across two vendors (the pivotal frontier cell at $K{=}15$, the others at $K{=}5$) with
 Wilson 95\% confidence intervals on the planner arm.
 
 \begin{table}[t]
@@ -497,7 +497,7 @@ every $N\in\{2,4,8\}$ (frontier, $K{=}3$). The rate saturates, so the absolute n
 consumers under \arm{C0} grows linearly with $N$ while the planner holds all of them.
 
 Finally, the make-or-break question for the whole approach: do agents respect the scopes they are
-assigned? On the shared-file scenario ($K{=}5$, frontier), scope-leakage is 0.00---every planner
+assigned? On the shared-file scenario ($K{=}5$, frontier), scope-leakage is 0.00: every planner
 agent put its new work in a separate file and left the owned file untouched, several of them noting
 that they were doing so ``as coordinated.'' The disjoint-scope partition is not a tautology defeated
 by non-compliance; real agents honor it.
@@ -509,7 +509,7 @@ however strong, can recall a project-specific fact it was never told; if one ses
 gotcha and records it, an agent in a later session should stop repeating the mistake---but
 only if memory carries the discovery across sessions. We built a sandbox repository with two
 symmetric authentication backends that both export the same function, where which one is sanctioned
-appears nowhere in the code---it is a team decision that lives only in memory. Session~1 records the
+appears nowhere in the code; it is a team decision that lives only in memory. Session~1 records the
 decision; session~2 (a fresh session) is asked which backend to import. The repeated-mistake rate
 falls from 1.00 to 0.00 on both the frontier model and Haiku ($K{=}5$). Because the correct choice
 is not recoverable from the repository, the gap is an information gap, not a reasoning gap, and it
@@ -526,13 +526,13 @@ lost-in-the-middle literature \citep{liu2024lost}. It did not hold. We report it
 changes what one should claim for context routing.
 
 At the modest scales we first tested, a frontier model recalled a fact buried at any position with
-100\% adherence---no U-shaped dip. We then built a harder, size-swept test: a single agent must
+100\% adherence, with no U-shaped dip. We then built a harder, size-swept test: a single agent must
 retrieve the current payments contract, buried at $\sim$50\% depth among four hard-negative money
 shapes, in a codebase inflated to a target token budget, against routing that delivered the one
 relevant fact ($\sim$155 tokens). Accuracy did not degrade with dilution: both the frontier model
 and the small one picked the current contract over the decoys at 10k, 50k, and 100k tokens (and the
 frontier model up to $\sim$280k). A still-harder variant requiring a three-fact join with named
-traps gave the same answer---no accuracy gap opened, even for the small model.
+traps gave the same answer: no accuracy gap opened, even for the small model.
 
 What is real, and large, is cost and capacity. Routing delivers the needed fact in $\sim$155 tokens
 versus 10k--280k dumped into a single agent's prompt---68$\times$ to 1296$\times$ less context per
