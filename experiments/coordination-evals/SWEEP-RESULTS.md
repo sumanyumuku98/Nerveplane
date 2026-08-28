@@ -30,9 +30,13 @@ Real agents; a breaking `amount`→`amountCents` contract migration. CTSR:
 |---|---|---|---|
 | Claude frontier | 0.00 | 0.00 | **1.00** |
 | Claude Haiku | 0.00 | 0.00 | **0.60** |
+| OpenAI Codex | 0.00 | 0.00 | **1.00** |
 
-The coordination *signal* is capability-independent (both models 0.00 without it);
-*acting on* the plan is partly capability-dependent (frontier 1.00 > Haiku 0.60).
+The coordination *signal* is capability- and vendor-independent (all three models
+0.00 without it); *acting on* the plan is partly capability-dependent (the two
+frontier models 1.00 > Haiku 0.60). The second model family (OpenAI Codex, K=5)
+matches Claude-frontier exactly — not a single-vendor artifact. Resolves the memo's
+"second model family" follow-up.
 
 ## Live effect-by-N (fan-out, frontier, K=3) — **DONE**
 

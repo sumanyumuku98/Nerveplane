@@ -52,9 +52,17 @@ A breaking `amount`→`amountCents` migration; consumer breaks unless it adapts.
 |---|---|---|---|
 | Claude frontier | 0.00 | 0.00 | **1.00** |
 | Claude Haiku | 0.00 | 0.00 | **0.60** |
+| OpenAI Codex | 0.00 | 0.00 | **1.00** |
 
-Coordination *signal* is capability-independent (both 0.00 without it); *acting* on
-the plan is partly capability-dependent (frontier 1.00 > Haiku 0.60).
+Coordination *signal* is capability- and vendor-independent (all three 0.00 without
+it); *acting* on the plan is partly capability-dependent (the two frontier models
+1.00 > Haiku 0.60). OpenAI Codex (K=5) reproduces the Claude-frontier pattern
+exactly, so the effect is not a single-vendor artifact.
+
+**Wider-K + CIs (Wilson 95%).** Frontier re-run at **K=15**: C1-plan **15/15 = 1.00,
+CI [0.80, 1.00]** vs both baselines **0/15, CI [0.00, 0.20]** — non-overlapping,
+Fisher's exact p<1e-4. Codex (K=5) **5/5 = 1.00, CI [0.57, 1.00]**; Haiku (K=5)
+**3/5 = 0.60, CI [0.23, 0.88]**.
 
 ### 4. Live effect-by-N — contract fan-out (`live-multi.ts`, frontier, K=3)
 1 producer, N consumers; metric = per-consumer adaptation rate.

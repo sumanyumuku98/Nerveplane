@@ -1,0 +1,37 @@
+% Shared preamble for both builds (arXiv preprint + double-blind workshop).
+% neurips_2026 already loads natbib + geometry; do NOT reload those here.
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{xurl} % break long URLs anywhere so bib lines don't over-stretch
+\usepackage{pifont}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{cleveref}
+\usepackage{xspace}
+\setlength{\emergencystretch}{2em}
+
+% figure palette
+\definecolor{NPblue}{HTML}{2B6CB0}
+\definecolor{NPteal}{HTML}{2C7A7B}
+\definecolor{NPorange}{HTML}{C05621}
+\definecolor{NPgray}{HTML}{4A5568}
+
+% anonymity switch: drivers set \anontrue (workshop) or \anonfalse (preprint)
+% and define \sysname accordingly, before \input{body}.
+\newif\ifanon
+\newcommand{\arm}[1]{\textsc{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\ctsr}{CTSR}
+% Codex live contract CTSR (C0 / C1-detect / C1-plan) from the K=5 run (2026-08-25).
+\newcommand{\CODEXCZERO}{0.00}
+\newcommand{\CODEXDET}{0.00}
+\newcommand{\CODEXPLAN}{1.00}
